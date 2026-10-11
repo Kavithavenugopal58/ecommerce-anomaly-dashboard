@@ -417,14 +417,27 @@ with kpi4:
 
 
 
+
 # ==================================================
 # 8. INTERACTIVE KPI TREND + ALERTS BY PRIORITY
 # ==================================================
 
-trend_col, priority_col = st.columns([2.2, 1])
+# Toggle between side-by-side dashboard and expanded trend
+expand_trend = st.checkbox(
+    "Expand KPI Trend",
+    value=False,
+    key="expand_kpi_trend"
+)
+
+if expand_trend:
+    trend_col = st.container()
+    priority_col = None
+else:
+    trend_col, priority_col = st.columns([2.2, 1])
+
 
 # --------------------------------------------------
-# LEFT: KPI TREND
+# LEFT / FULL-WIDTH: KPI TREND
 # --------------------------------------------------
 with trend_col:
     st.subheader("KPI Trend with Anomalies")
@@ -545,7 +558,7 @@ with trend_col:
                     ))
 
     # --------------------------------------------------
-    # CATEGORY TREND: CATEGORY-SPECIFIC METRICS
+    # CATEGORY TREND: LEAVE-ONE-OUT WEEKDAY BASELINE
     # --------------------------------------------------
     else:
         category_history = prod[
@@ -555,28 +568,22 @@ with trend_col:
         category_history["Date"] = pd.to_datetime(
             category_history["Date"], errors="coerce"
         )
-
         category_history = category_history.dropna(
             subset=["Date"]
         )
 
         if category_history.empty:
             st.warning("No data is available for this category.")
-
         else:
-            # Convert numeric fields safely.
-            numeric_columns = [
+            for col in [
                 "Orders",
                 "Revenue_INR",
                 "Cancellation_Rate_Pct"
-            ]
-
-            for col in numeric_columns:
+            ]:
                 category_history[col] = pd.to_numeric(
                     category_history[col], errors="coerce"
                 )
 
-            # Aggregate the selected category by date.
             daily = (
                 category_history.groupby("Date", as_index=False)
                 .agg(
@@ -590,7 +597,6 @@ with trend_col:
                 / daily["Orders"].replace(0, float("nan"))
             )
 
-            # Order-weighted cancellation rate.
             category_history["Weighted_Cancellation"] = (
                 category_history["Cancellation_Rate_Pct"]
                 * category_history["Orders"]
@@ -620,32 +626,25 @@ with trend_col:
                 "Weighted AOV (INR)": "Weighted AOV (INR)",
                 "Cancellation Rate (%)": "Cancellation Rate (%)"
             }
-
             metric_col = metric_columns[kpi_name]
 
-            # Use the complete available category history for
-            # calculating expected values.
-            history = daily.copy().sort_values("Date")
-            history = history.reset_index(drop=True)
-
-            # --------------------------------------------------
-            # LEAVE-ONE-OUT WEEKDAY MEDIAN BASELINE
-            # Exclude each date from its own reference baseline.
-            # --------------------------------------------------
+            # Build baseline using all available category dates,
+            # excluding each date from its own reference calculation.
+            history = daily.copy().sort_values("Date").reset_index(
+                drop=True
+            )
             history["Expected"] = float("nan")
             history["MAD"] = float("nan")
 
             for idx in history.index:
-                current_weekday = history.loc[idx, "Day_of_Week"]
+                weekday = history.loc[idx, "Day_of_Week"]
 
                 reference = history.loc[
-                    (history["Day_of_Week"] == current_weekday)
+                    (history["Day_of_Week"] == weekday)
                     & (history.index != idx),
                     metric_col
                 ].dropna()
 
-                # If there are too few same-weekday observations,
-                # fall back to all other dates.
                 if len(reference) < 2:
                     reference = history.loc[
                         history.index != idx, metric_col
@@ -660,7 +659,6 @@ with trend_col:
                     history.loc[idx, "Expected"] = expected_value
                     history.loc[idx, "MAD"] = mad_value
 
-            # Use the same historical calculation for displayed dates.
             daily = daily.merge(
                 history[["Date", "Expected", "MAD"]],
                 on="Date",
@@ -671,15 +669,12 @@ with trend_col:
                 daily[metric_col] - daily["Expected"]
             ).abs()
 
-            # Category-specific exploratory anomaly rule.
             metric_median = history[metric_col].median()
-
             metric_scale = max(
                 abs(float(metric_median))
                 if pd.notna(metric_median) else 0.0,
                 1.0
             )
-
             tolerance = metric_scale * 0.01
 
             daily["Is_Anomaly"] = (
@@ -697,7 +692,6 @@ with trend_col:
                 )
             )
 
-            # Filter the visible chart to the selected date range.
             range_start = pd.to_datetime(start_date).normalize()
             range_end = pd.to_datetime(end_date).normalize()
 
@@ -711,7 +705,6 @@ with trend_col:
                     "No records exist for this category in the selected "
                     "date range."
                 )
-
             else:
                 fig.add_trace(go.Scatter(
                     x=daily["Date"],
@@ -727,7 +720,6 @@ with trend_col:
                     )
                 ))
 
-                # Visually distinct expected baseline.
                 fig.add_trace(go.Scatter(
                     x=daily["Date"],
                     y=daily["Expected"],
@@ -773,17 +765,17 @@ with trend_col:
                     ))
 
                 st.caption(
-                    "Category expected values use a leave-one-out weekday "
-                    "median, with a fallback to other historical dates. "
-                    "Red markers are exploratory category-level flags, "
-                    "not the original detector's alerts."
+                    "Category baseline uses a leave-one-out weekday median, "
+                    "with a fallback to other historical dates. Category "
+                    "anomaly markers are exploratory and are not the "
+                    "original detector's alerts."
                 )
 
     # --------------------------------------------------
-    # DISPLAY KPI TREND
+    # DISPLAY TREND
     # --------------------------------------------------
     fig.update_layout(
-        height=300,
+        height=520 if expand_trend else 300,
         margin=dict(l=10, r=10, t=25, b=10),
         hovermode="x unified",
         legend=dict(
@@ -791,7 +783,7 @@ with trend_col:
             yanchor="bottom",
             y=1.02,
             x=0,
-            font=dict(size=9)
+            font=dict(size=10 if expand_trend else 9)
         ),
         xaxis_title=None,
         yaxis_title=None
@@ -806,147 +798,151 @@ with trend_col:
     st.plotly_chart(
         fig,
         use_container_width=True,
-        config={"displayModeBar": False}
+        config={
+            "displayModeBar": True,
+            "displaylogo": False
+        }
     )
 
 
 # --------------------------------------------------
 # RIGHT: ALERTS BY PRIORITY
+# Hidden while trend is expanded
 # --------------------------------------------------
-with priority_col:
-    st.subheader("Alerts by Priority")
+if not expand_trend:
+    with priority_col:
+        st.subheader("Alerts by Priority")
 
-    priority_source = alert_data.copy()
+        priority_source = alert_data.copy()
 
-    # Preserve existing Geography and Category date filtering.
-    if not priority_source.empty and not prod.empty:
-        matching_products = prod.copy()
+        if not priority_source.empty and not prod.empty:
+            matching_products = prod.copy()
 
-        if geo != "All" and "Geography" in matching_products.columns:
-            matching_products = matching_products[
-                matching_products["Geography"].astype(str) == str(geo)
-            ]
-
-        if category != "All" and "Category" in matching_products.columns:
-            matching_products = matching_products[
-                matching_products["Category"].astype(str) == str(category)
-            ]
-
-        matching_dates = set(
-            pd.to_datetime(matching_products["Date"]).dt.date
-        )
-
-        priority_source = priority_source[
-            pd.to_datetime(priority_source["Date"]).dt.date.isin(
-                matching_dates
-            )
-        ]
-
-    if not priority_source.empty:
-        priority_counts = (
-            priority_source["Display_Priority"]
-            .value_counts()
-            .rename_axis("Priority")
-            .reset_index(name="Alerts")
-        )
-
-        total_alerts = int(priority_counts["Alerts"].sum())
-
-        if total_alerts > 0:
-            priority_labels = {
-                "P1 - Immediate": "Critical",
-                "P2 - High": "High",
-                "P3 - Watch": "Watch",
-                "P4 - Normal": "Normal"
-            }
-
-            priority_counts["Priority_Label"] = (
-                priority_counts["Priority"]
-                .map(priority_labels)
-                .fillna(priority_counts["Priority"])
-            )
-
-            priority_counts["Percentage"] = (
-                priority_counts["Alerts"] / total_alerts * 100
-            )
-
-            priority_colors = {
-                "Critical": "#FF3B30",
-                "High": "#FF7A00",
-                "Watch": "#FFBF00",
-                "Normal": "#36A269"
-            }
-
-            priority_fig = px.pie(
-                priority_counts,
-                names="Priority_Label",
-                values="Alerts",
-                hole=0.62,
-                color="Priority_Label",
-                color_discrete_map=priority_colors
-            )
-
-            priority_fig.update_traces(
-                text=priority_counts["Percentage"].map(
-                    lambda value: f"{value:.0f}%"
-                ),
-                textinfo="text",
-                textposition="inside",
-                insidetextorientation="horizontal",
-                textfont=dict(size=11, color="white"),
-                sort=False,
-                hovertemplate=(
-                    "<b>%{label}</b><br>"
-                    "Alerts: %{value}<br>"
-                    "Share: %{percent}<extra></extra>"
-                )
-            )
-
-            priority_fig.update_layout(
-                height=240,
-                margin=dict(l=0, r=0, t=5, b=5),
-                showlegend=True,
-                legend=dict(
-                    orientation="v",
-                    x=1.0,
-                    y=0.5,
-                    xanchor="left",
-                    yanchor="middle",
-                    font=dict(size=10)
-                ),
-                uniformtext=dict(
-                    minsize=9,
-                    mode="hide"
-                ),
-                annotations=[
-                    dict(
-                        text=f"<b>{total_alerts}</b><br>Alerts",
-                        x=0.5,
-                        y=0.5,
-                        xref="paper",
-                        yref="paper",
-                        xanchor="center",
-                        yanchor="middle",
-                        showarrow=False,
-                        align="center",
-                        font=dict(size=15, color="#23344D")
-                    )
+            if geo != "All" and "Geography" in matching_products.columns:
+                matching_products = matching_products[
+                    matching_products["Geography"].astype(str) == str(geo)
                 ]
+
+            if category != "All" and "Category" in matching_products.columns:
+                matching_products = matching_products[
+                    matching_products["Category"].astype(str) == str(category)
+                ]
+
+            matching_dates = set(
+                pd.to_datetime(matching_products["Date"]).dt.date
             )
 
-            st.plotly_chart(
-                priority_fig,
-                use_container_width=True,
-                config={"displayModeBar": False}
+            priority_source = priority_source[
+                pd.to_datetime(priority_source["Date"]).dt.date.isin(
+                    matching_dates
+                )
+            ]
+
+        if not priority_source.empty:
+            priority_counts = (
+                priority_source["Display_Priority"]
+                .value_counts()
+                .rename_axis("Priority")
+                .reset_index(name="Alerts")
             )
 
-            st.caption(
-                f"Geography: {geo} | Category: {category}"
-            )
+            total_alerts = int(priority_counts["Alerts"].sum())
+
+            if total_alerts > 0:
+                priority_labels = {
+                    "P1 - Immediate": "Critical",
+                    "P2 - High": "High",
+                    "P3 - Watch": "Watch",
+                    "P4 - Normal": "Normal"
+                }
+
+                priority_counts["Priority_Label"] = (
+                    priority_counts["Priority"]
+                    .map(priority_labels)
+                    .fillna(priority_counts["Priority"])
+                )
+
+                priority_counts["Percentage"] = (
+                    priority_counts["Alerts"] / total_alerts * 100
+                )
+
+                priority_colors = {
+                    "Critical": "#FF3B30",
+                    "High": "#FF7A00",
+                    "Watch": "#FFBF00",
+                    "Normal": "#36A269"
+                }
+
+                priority_fig = px.pie(
+                    priority_counts,
+                    names="Priority_Label",
+                    values="Alerts",
+                    hole=0.62,
+                    color="Priority_Label",
+                    color_discrete_map=priority_colors
+                )
+
+                priority_fig.update_traces(
+                    text=priority_counts["Percentage"].map(
+                        lambda value: f"{value:.0f}%"
+                    ),
+                    textinfo="text",
+                    textposition="inside",
+                    insidetextorientation="horizontal",
+                    textfont=dict(size=11, color="white"),
+                    sort=False,
+                    hovertemplate=(
+                        "<b>%{label}</b><br>"
+                        "Alerts: %{value}<br>"
+                        "Share: %{percent}<extra></extra>"
+                    )
+                )
+
+                priority_fig.update_layout(
+                    height=240,
+                    margin=dict(l=0, r=0, t=5, b=5),
+                    showlegend=True,
+                    legend=dict(
+                        orientation="v",
+                        x=1.0,
+                        y=0.5,
+                        xanchor="left",
+                        yanchor="middle",
+                        font=dict(size=10)
+                    ),
+                    uniformtext=dict(
+                        minsize=9,
+                        mode="hide"
+                    ),
+                    annotations=[
+                        dict(
+                            text=f"<b>{total_alerts}</b><br>Alerts",
+                            x=0.5,
+                            y=0.5,
+                            xref="paper",
+                            yref="paper",
+                            xanchor="center",
+                            yanchor="middle",
+                            showarrow=False,
+                            align="center",
+                            font=dict(size=15, color="#23344D")
+                        )
+                    ]
+                )
+
+                st.plotly_chart(
+                    priority_fig,
+                    use_container_width=True,
+                    config={"displayModeBar": False}
+                )
+
+                st.caption(
+                    f"Geography: {geo} | Category: {category}"
+                )
+            else:
+                st.info("No alerts match the selected filters.")
         else:
             st.info("No alerts match the selected filters.")
-    else:
-        st.info("No alerts match the selected filters.")
 
 # ==================================================
 # 9 & 10. CATEGORY + PRODUCT INVESTIGATION SIDE BY SIDE
