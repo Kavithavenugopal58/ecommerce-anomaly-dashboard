@@ -407,6 +407,44 @@ with kpi4:
     )
 
 
+# TEMPORARY DIAGNOSTIC: CHECK REVENUE CONSISTENCY
+
+det_check = det.copy()
+prod_check = prod.copy()
+
+det_check["Date"] = pd.to_datetime(
+    det_check["Date"], errors="coerce"
+)
+prod_check["Date"] = pd.to_datetime(
+    prod_check["Date"], errors="coerce"
+)
+
+product_daily_revenue = (
+    prod_check.groupby("Date")["Revenue_INR"]
+    .sum()
+    .rename("Product_Revenue")
+)
+
+revenue_check = det_check[
+    ["Date", "Total_Revenue_INR", "Total_Revenue_INR_Expected"]
+].merge(
+    product_daily_revenue,
+    left_on="Date",
+    right_index=True,
+    how="left"
+)
+
+revenue_check["Actual_Revenue_Difference"] = (
+    revenue_check["Total_Revenue_INR"]
+    - revenue_check["Product_Revenue"]
+)
+
+st.subheader("Temporary Revenue Consistency Check")
+st.dataframe(
+    revenue_check.tail(10),
+    use_container_width=True
+)
+
 
 
 
