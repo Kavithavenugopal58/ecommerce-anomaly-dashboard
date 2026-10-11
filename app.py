@@ -559,7 +559,7 @@ else:
 
 
 # ==================================================
-# 11. ACTIONABLE ALERT FEED WITH CATEGORY & PRODUCTS
+# 11. ACTIONABLE ALERT FEED WITH WRAPPED TEXT
 # ==================================================
 st.subheader("Actionable Alert Feed")
 
@@ -581,7 +581,6 @@ display_columns = [
 if not alert_data.empty:
     feed = alert_data.sort_values("Date", ascending=False).copy()
 
-    # Build category and product details for each alert date
     category_details = []
 
     for alert_date in feed["Date"]:
@@ -589,13 +588,11 @@ if not alert_data.empty:
             products["Date"].dt.date == alert_date.date()
         ].copy()
 
-        # Apply the selected geography filter
         if geo != "All" and "Geography" in day_products.columns:
             day_products = day_products[
                 day_products["Geography"].astype(str) == geo
             ]
 
-        # Apply the selected category filter
         if category != "All" and "Category" in day_products.columns:
             day_products = day_products[
                 day_products["Category"].astype(str) == category
@@ -608,7 +605,6 @@ if not alert_data.empty:
             })
             continue
 
-        # Summarize products under each category
         summaries = []
 
         for cat, group in day_products.groupby("Category"):
@@ -626,15 +622,23 @@ if not alert_data.empty:
 
         category_details.append({
             "Category": "; ".join(
-                sorted(day_products["Category"].dropna().astype(str).unique())
+                sorted(
+                    day_products["Category"]
+                    .dropna()
+                    .astype(str)
+                    .unique()
+                )
             ),
             "Products in Category": " | ".join(summaries)
         })
 
-    details_df = pd.DataFrame(category_details, index=feed.index)
+    details_df = pd.DataFrame(
+        category_details,
+        index=feed.index
+    )
+
     feed = pd.concat([feed, details_df], axis=1)
 
-    # Put investigation fields near the date and priority
     preferred_order = [
         "Date",
         "Display_Priority",
@@ -654,34 +658,77 @@ if not alert_data.empty:
 
     feed["Date"] = feed["Date"].dt.strftime("%Y-%m-%d")
 
-    st.dataframe(
-        feed[visible_columns],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Category": st.column_config.TextColumn(
-                "Category",
-                width="medium"
-            ),
-            "Products in Category": st.column_config.TextColumn(
-                "Products within Category",
-                width="large"
-            ),
-            "Recommended_Action": st.column_config.TextColumn(
-                "Recommended Action",
-                width="large"
-            )
+    # Convert the alert feed to HTML so long text can wrap
+    display_feed = feed[visible_columns].copy()
+
+    html_table = display_feed.to_html(
+        index=False,
+        escape=True,
+        classes="alert-table"
+    )
+
+    # Style the table and wrap long text
+    st.markdown(
+        """
+        <style>
+        .alert-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: 13px;
         }
+
+        .alert-table th,
+        .alert-table td {
+            border: 1px solid #d9dee7;
+            padding: 9px;
+            text-align: left;
+            white-space: normal !important;
+            overflow-wrap: anywhere;
+            word-break: normal;
+            vertical-align: top;
+            line-height: 1.5;
+        }
+
+        .alert-table th {
+            background-color: #eef2f7;
+            font-weight: 600;
+        }
+
+        .alert-table th:nth-child(4),
+        .alert-table td:nth-child(4) {
+            width: 22%;
+        }
+
+        .alert-table th:nth-child(5),
+        .alert-table td:nth-child(5) {
+            width: 25%;
+        }
+
+        .alert-table th:last-child,
+        .alert-table td:last-child {
+            width: 22%;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        html_table,
+        unsafe_allow_html=True
     )
 
     st.caption(
-        "Product names are the top five by order volume within each "
-        "category for that date. This identifies related products, "
-        "not necessarily the cause of the anomaly."
+        "Products shown are the top five by order volume within each "
+        "category for the alert date. Category and product details "
+        "provide investigation context, not proof of root cause."
     )
-else:
-    st.info("No alerts match the selected date and priority filters.")
 
+else:
+    st.info(
+        "No alerts match the selected date and priority filters."
+    )
 # ==================================================
 # 12. ALERT INVESTIGATION AND RULE-BASED NARRATIVE
 # ==================================================
