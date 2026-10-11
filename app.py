@@ -18,61 +18,95 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Overall canvas: pale blue should appear in the gutters between panels. */
+    /* PAGE: very light neutral canvas, visible only between dashboard panels */
     .stApp,
     [data-testid="stAppViewContainer"],
     [data-testid="stMain"],
     [data-testid="stMainBlockContainer"] {
-        background: #EAF4FF !important;
+        background: #EAF0F6 !important;
     }
 
     .block-container {
         max-width: 100%;
-        padding-left: 1.25rem;
-        padding-right: 1.25rem;
-        padding-top: 1rem;
-        padding-bottom: 2rem;
+        padding: 0.8rem 1rem 1.5rem 1rem;
     }
 
-    /* A pale, quiet sidebar that visually belongs to the dashboard. */
+    /* FILTER PANEL: neutral grey, distinct from the white dashboard cards */
     [data-testid="stSidebar"] {
-        background: #F3F8FE;
-        border-right: 1px solid #D5E6F8;
+        background: #F1F4F8 !important;
+        border-right: 2px solid #D3DCE7;
     }
-
-    /* White grid cells; the blue canvas remains visible as the gaps. */
-    [data-testid="column"] {
-        background: #FFFFFF;
-        border: 1px solid #CFE3F8;
-        border-radius: 12px;
-        padding: 0.65rem 0.7rem 0.75rem 0.7rem;
-        box-shadow: 0 2px 7px rgba(36, 91, 134, 0.045);
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+        background: #F1F4F8 !important;
+        padding: 0.8rem 0.65rem;
     }
-
-    /* Keep Plotly chart areas white, not blue. */
-    [data-testid="stPlotlyChart"] {
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] p {
+        color: #26384D !important;
+        font-weight: 600;
+    }
+    /* White filter controls with visible grey outlines */
+    [data-testid="stSidebar"] [data-baseweb="select"] > div,
+    [data-testid="stSidebar"] [data-baseweb="input"] > div,
+    [data-testid="stSidebar"] [data-testid="stDateInput"] input,
+    [data-testid="stSidebar"] input,
+    [data-testid="stSidebar"] textarea {
         background: #FFFFFF !important;
-        border-radius: 8px;
-        overflow: hidden;
+        color: #24364B !important;
+        border: 1px solid #B9C6D5 !important;
+        border-radius: 7px !important;
+        box-shadow: none !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="select"]:focus-within,
+    [data-testid="stSidebar"] [data-baseweb="input"]:focus-within {
+        outline: 2px solid #6C9BCB !important;
+        outline-offset: 1px;
+    }
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
+        margin-bottom: 0.15rem;
+    }
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        gap: 0.55rem;
     }
 
+    /* DASHBOARD GRID: white independent panels separated by grey-blue gutters */
+    [data-testid="stMain"] [data-testid="column"] {
+        background: #FFFFFF !important;
+        border: 1px solid #D4DEE9;
+        border-radius: 10px;
+        padding: 0.55rem 0.65rem 0.65rem 0.65rem;
+        box-shadow: 0 2px 5px rgba(31, 52, 75, 0.055);
+        min-width: 0;
+    }
+    [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
+        gap: 0.75rem;
+        align-items: stretch;
+    }
+    [data-testid="stMain"] [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] {
+        margin-bottom: 0.6rem;
+    }
+
+    /* Charts and tables stay white inside their panels */
+    [data-testid="stPlotlyChart"],
     [data-testid="stDataFrame"],
     [data-testid="stTable"] {
-        background: #FFFFFF;
-        border-radius: 8px;
+        background: #FFFFFF !important;
+        border-radius: 7px;
+        overflow: hidden;
+    }
+    [data-testid="stPlotlyChart"] > div {
+        background: #FFFFFF !important;
     }
 
-    /* Softer dashboard headings and dividers. */
+    /* Readable typography and quiet separators */
     h1, h2, h3, h4 {
-        color: #17365D;
+        color: #17324F;
     }
     hr {
-        border-color: #CFE3F8;
-    }
-
-    /* Slightly softer widgets in the filter sidebar. */
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        gap: 0.65rem;
+        border-color: #D6DFE9;
     }
     </style>
     """,
@@ -381,7 +415,10 @@ st.markdown(
         min-height: 112px;
         color: #142B4D;
         box-shadow: 0 2px 8px rgba(36, 91, 134, 0.06);
-        border-top: 3px solid #8FC5F5;
+        border-top: 4px solid #3B82C4;
+    }
+    [data-testid="stMain"] [data-testid="column"] .kpi-card {
+        background: #FFFFFF;
     }
     .kpi-label {
         font-size: 12px;
