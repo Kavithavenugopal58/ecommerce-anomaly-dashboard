@@ -557,8 +557,9 @@ if not prod.empty and "Product_Name" in prod.columns:
 else:
     st.info("No product data matches the selected filters.")
 
+
 # ==================================================
-# 11. ACTIONABLE ALERT FEED
+# 11. ACTIONABLE ALERT FEED WITH CATEGORY & PRODUCTS
 # ==================================================
 st.subheader("Actionable Alert Feed")
 
@@ -579,15 +580,107 @@ display_columns = [
 
 if not alert_data.empty:
     feed = alert_data.sort_values("Date", ascending=False).copy()
+
+    # Build category and product details for each alert date
+    category_details = []
+
+    for alert_date in feed["Date"]:
+        day_products = products[
+            products["Date"].dt.date == alert_date.date()
+        ].copy()
+
+        # Apply the selected geography filter
+        if geo != "All" and "Geography" in day_products.columns:
+            day_products = day_products[
+                day_products["Geography"].astype(str) == geo
+            ]
+
+        # Apply the selected category filter
+        if category != "All" and "Category" in day_products.columns:
+            day_products = day_products[
+                day_products["Category"].astype(str) == category
+            ]
+
+        if day_products.empty:
+            category_details.append({
+                "Category": "No matching product data",
+                "Products in Category": "N/A"
+            })
+            continue
+
+        # Summarize products under each category
+        summaries = []
+
+        for cat, group in day_products.groupby("Category"):
+            product_totals = (
+                group.groupby("Product_Name")["Orders"]
+                .sum()
+                .sort_values(ascending=False)
+            )
+
+            product_names = ", ".join(
+                product_totals.head(5).index.astype(str)
+            )
+
+            summaries.append(f"{cat}: {product_names}")
+
+        category_details.append({
+            "Category": "; ".join(
+                sorted(day_products["Category"].dropna().astype(str).unique())
+            ),
+            "Products in Category": " | ".join(summaries)
+        })
+
+    details_df = pd.DataFrame(category_details, index=feed.index)
+    feed = pd.concat([feed, details_df], axis=1)
+
+    # Put investigation fields near the date and priority
+    preferred_order = [
+        "Date",
+        "Display_Priority",
+        "Overall_Anomaly_Severity",
+        "Category",
+        "Products in Category",
+        "Affected_KPI_Count",
+        "Owner",
+        "Supporting_Owner",
+        "Recommended_Action"
+    ]
+
+    visible_columns = [
+        column for column in preferred_order
+        if column in feed.columns
+    ]
+
     feed["Date"] = feed["Date"].dt.strftime("%Y-%m-%d")
 
     st.dataframe(
-        feed[display_columns],
+        feed[visible_columns],
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        column_config={
+            "Category": st.column_config.TextColumn(
+                "Category",
+                width="medium"
+            ),
+            "Products in Category": st.column_config.TextColumn(
+                "Products within Category",
+                width="large"
+            ),
+            "Recommended_Action": st.column_config.TextColumn(
+                "Recommended Action",
+                width="large"
+            )
+        }
+    )
+
+    st.caption(
+        "Product names are the top five by order volume within each "
+        "category for that date. This identifies related products, "
+        "not necessarily the cause of the anomaly."
     )
 else:
-    st.info("No alerts match the selected filters.")
+    st.info("No alerts match the selected date and priority filters.")
 
 # ==================================================
 # 12. ALERT INVESTIGATION AND RULE-BASED NARRATIVE
