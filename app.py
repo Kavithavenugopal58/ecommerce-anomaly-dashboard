@@ -504,29 +504,46 @@ st.dataframe(
 )
 
 
-# TEMPORARY: COMPARE DETECTOR BASELINE WITH WEEKDAY MEDIAN
 
-baseline_validation = det.copy()
+# TEMPORARY: VALIDATE BASELINE USING FULL HISTORY
+
+baseline_validation = detected.copy()
 
 baseline_validation["Date"] = pd.to_datetime(
     baseline_validation["Date"], errors="coerce"
 )
+baseline_validation = baseline_validation.dropna(
+    subset=["Date"]
+).sort_values("Date").reset_index(drop=True)
 
 baseline_validation["Day_of_Week"] = (
     baseline_validation["Date"].dt.day_name()
 )
 
-# Calculate a simple weekday median from actual daily revenue.
-weekday_medians = (
-    baseline_validation.groupby("Day_of_Week")["Total_Revenue_INR"]
-    .median()
+# Calculate a leave-one-out weekday median using all historical dates.
+# Exclude each row's own value from its reference baseline.
+baseline_validation["Full_History_Weekday_Median"] = float("nan")
+
+for idx in baseline_validation.index:
+    current_weekday = baseline_validation.loc[idx, "Day_of_Week"]
+
+    historical_values = baseline_validation.loc[
+        (baseline_validation["Day_of_Week"] == current_weekday)
+        & (baseline_validation.index != idx),
+        "Total_Revenue_INR"
+    ].dropna()
+
+    if not historical_values.empty:
+        baseline_validation.loc[
+            idx, "Full_History_Weekday_Median"
+        ] = historical_values.median()
+
+baseline_validation["Expected_to_Median_Ratio"] = (
+    baseline_validation["Total_Revenue_INR_Expected"]
+    / baseline_validation["Full_History_Weekday_Median"].replace(0, float("nan"))
 )
 
-baseline_validation["Simple_Weekday_Median"] = (
-    baseline_validation["Day_of_Week"].map(weekday_medians)
-)
-
-st.subheader("Detector Baseline vs Simple Weekday Median")
+st.subheader("Full-History Revenue Baseline Validation")
 
 st.dataframe(
     baseline_validation[
@@ -535,7 +552,8 @@ st.dataframe(
             "Day_of_Week",
             "Total_Revenue_INR",
             "Total_Revenue_INR_Expected",
-            "Simple_Weekday_Median"
+            "Full_History_Weekday_Median",
+            "Expected_to_Median_Ratio"
         ]
     ].tail(10),
     use_container_width=True
