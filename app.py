@@ -15,6 +15,20 @@ st.set_page_config(
     layout="wide"
 )
 
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 100%;
+        padding-left: 2rem;
+        padding-right: 2rem;
+        padding-top: 1.5rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 BASE_DIR = Path(__file__).parent
 
 # ==================================================
