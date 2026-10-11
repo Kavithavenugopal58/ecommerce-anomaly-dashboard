@@ -210,10 +210,7 @@ elif isinstance(date_range, (tuple, list)) and len(date_range) == 1:
 else:
     start_date, end_date = minimum_date, maximum_date
 
-kpi_name = st.sidebar.selectbox(
-    "KPI to investigate",
-    list(KPI_OPTIONS.keys())
-)
+
 
 geo_options = ["All"]
 if "Geography" in products.columns:
