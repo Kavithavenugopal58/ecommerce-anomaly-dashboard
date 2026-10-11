@@ -409,6 +409,7 @@ with kpi4:
 
 
 
+
 # ==================================================
 # 8. KPI TREND + ALERTS BY PRIORITY
 # ==================================================
@@ -442,7 +443,7 @@ with trend_col:
     else:
         fig = go.Figure()
 
-        # Actual KPI trend
+        # Actual KPI values
         fig.add_trace(
             go.Scatter(
                 x=trend["Date"],
@@ -466,7 +467,7 @@ with trend_col:
                     x=trend["Date"],
                     y=trend[expected_column],
                     mode="lines",
-                    name="Expected (Weekday Baseline)",
+                    name="Expected baseline",
                     line=dict(
                         color="#8493A8",
                         width=1.5,
@@ -501,7 +502,7 @@ with trend_col:
                         ),
                         hovertemplate=(
                             "%{x|%d %b %Y}<br>"
-                            "Anomaly value: %{y:,.2f}<extra></extra>"
+                            "Anomaly: %{y:,.2f}<extra></extra>"
                         )
                     )
                 )
@@ -521,11 +522,7 @@ with trend_col:
             yaxis_title=None
         )
 
-        fig.update_xaxes(
-            showgrid=False,
-            tickformat="%d %b"
-        )
-
+        fig.update_xaxes(showgrid=False)
         fig.update_yaxes(
             gridcolor="#E7ECF2",
             zeroline=False
@@ -539,15 +536,14 @@ with trend_col:
 
 
 # --------------------------------------------------
-# RIGHT: COMPACT ALERT PRIORITY DONUT
+# RIGHT: ALERT PRIORITY DONUT
 # --------------------------------------------------
 with priority_col:
     st.subheader("Alerts by Priority")
 
-    # alert_data should already reflect the selected date range
     priority_source = alert_data.copy()
 
-    # Apply Geography and Category filters to matching alert dates
+    # Apply the selected Geography to alert dates
     if not priority_source.empty and not prod.empty:
         matching_products = prod.copy()
 
@@ -557,21 +553,41 @@ with priority_col:
                 == str(geo)
             ]
 
-        if category != "All" and "Category" in matching_products.columns:
-            matching_products = matching_products[
-                matching_products["Category"].astype(str)
-                == str(category)
-            ]
-
         matching_dates = set(
             pd.to_datetime(matching_products["Date"]).dt.date
         )
 
         priority_source = priority_source[
-            pd.to_datetime(
-                priority_source["Date"]
-            ).dt.date.isin(matching_dates)
+            pd.to_datetime(priority_source["Date"]).dt.date.isin(
+                matching_dates
+            )
         ]
+
+    # For a selected category, require explicit category attribution.
+    # Do not infer category ownership merely because products were sold.
+    category_attribution_column = None
+
+    for candidate in ["Alert_Category", "Category"]:
+        if candidate in priority_source.columns:
+            category_attribution_column = candidate
+            break
+
+    if category != "All":
+        if category_attribution_column is None:
+            st.info(
+                "Category-specific alert attribution is not available. "
+                "The detector identifies daily overall anomalies, so "
+                "these alerts cannot reliably be assigned to a category."
+            )
+            priority_source = priority_source.iloc[0:0]
+
+        else:
+            priority_source = priority_source[
+                priority_source[category_attribution_column]
+                .astype(str)
+                .str.strip()
+                == str(category).strip()
+            ]
 
     if not priority_source.empty:
         priority_counts = (
@@ -584,14 +600,6 @@ with priority_col:
         total_alerts = int(priority_counts["Alerts"].sum())
 
         if total_alerts > 0:
-            # Calculate percentages
-            priority_counts["Percentage"] = (
-                priority_counts["Alerts"]
-                / total_alerts
-                * 100
-            )
-
-            # Shorten labels for the legend
             priority_labels = {
                 "P1 - Immediate": "Critical",
                 "P2 - High": "High",
@@ -605,6 +613,10 @@ with priority_col:
                 .fillna(priority_counts["Priority"])
             )
 
+            priority_counts["Percentage"] = (
+                priority_counts["Alerts"] / total_alerts * 100
+            )
+
             priority_colors = {
                 "Critical": "#FF3B30",
                 "High": "#FF7A00",
@@ -612,7 +624,6 @@ with priority_col:
                 "Normal": "#36A269"
             }
 
-            # Create the donut chart
             priority_fig = px.pie(
                 priority_counts,
                 names="Priority_Label",
@@ -622,7 +633,7 @@ with priority_col:
                 color_discrete_map=priority_colors
             )
 
-            # Display percentages inside slices
+            # Percentage labels inside slices
             priority_fig.update_traces(
                 text=priority_counts["Percentage"].map(
                     lambda value: f"{value:.0f}%"
@@ -630,7 +641,7 @@ with priority_col:
                 textinfo="text",
                 textposition="inside",
                 insidetextorientation="horizontal",
-                textfont=dict(size=12, color="white"),
+                textfont=dict(size=11, color="white"),
                 sort=False,
                 hovertemplate=(
                     "<b>%{label}</b><br>"
@@ -658,9 +669,14 @@ with priority_col:
                 annotations=[
                     dict(
                         text=f"<b>{total_alerts}</b><br>Alerts",
-                        x=0.40,
+                        x=0.5,
                         y=0.5,
+                        xref="paper",
+                        yref="paper",
+                        xanchor="center",
+                        yanchor="middle",
                         showarrow=False,
+                        align="center",
                         font=dict(
                             size=15,
                             color="#23344D"
@@ -683,7 +699,7 @@ with priority_col:
             st.info("No alerts match the selected filters.")
 
     else:
-        st.info("No alerts match the selected filters.")
+        st.metric("Alerts matching filters", 0)
 
 # ==================================================
 # 9 & 10. CATEGORY + PRODUCT INVESTIGATION SIDE BY SIDE
