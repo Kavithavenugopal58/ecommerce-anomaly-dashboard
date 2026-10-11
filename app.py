@@ -407,15 +407,15 @@ with kpi4:
     )
 
 
+
 # ==================================================
-# 8. COMPACT KPI TREND + ALERT PRIORITY CHART
+# 8. KPI TREND + ALERT PRIORITY (COMPACT LAYOUT)
 # ==================================================
 
-# Two side-by-side panels: trend on left, alert priority on right
 trend_col, priority_col = st.columns([2.2, 1])
 
 # --------------------------------------------------
-# LEFT: SELECTABLE KPI TREND
+# LEFT: KPI TREND
 # --------------------------------------------------
 with trend_col:
     st.subheader("KPI Trend with Anomalies")
@@ -433,48 +433,41 @@ with trend_col:
     trend = det.sort_values("Date").copy()
 
     if actual_column not in trend.columns:
-        st.warning(f"Required column is missing: {actual_column}")
+        st.warning(f"Missing KPI column: {actual_column}")
     else:
         fig = go.Figure()
 
-        # Actual KPI values
-        fig.add_trace(
-            go.Scatter(
+        fig.add_trace(go.Scatter(
+            x=trend["Date"],
+            y=trend[actual_column],
+            mode="lines+markers",
+            name=kpi_name,
+            line=dict(color="#2675C9", width=2),
+            marker=dict(size=4),
+            hovertemplate=(
+                "%{x|%d %b %Y}<br>"
+                + kpi_name
+                + ": %{y:,.2f}<extra></extra>"
+            )
+        ))
+
+        if expected_column in trend.columns:
+            fig.add_trace(go.Scatter(
                 x=trend["Date"],
-                y=trend[actual_column],
-                mode="lines+markers",
-                name=kpi_name,
-                line=dict(color="#2675C9", width=2),
-                marker=dict(size=4),
+                y=trend[expected_column],
+                mode="lines",
+                name="Expected baseline",
+                line=dict(
+                    color="#8493A8",
+                    width=1.5,
+                    dash="dash"
+                ),
                 hovertemplate=(
                     "%{x|%d %b %Y}<br>"
-                    + kpi_name
-                    + ": %{y:,.2f}<extra></extra>"
+                    "Expected: %{y:,.2f}<extra></extra>"
                 )
-            )
-        )
+            ))
 
-        # Expected baseline
-        if expected_column in trend.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=trend["Date"],
-                    y=trend[expected_column],
-                    mode="lines",
-                    name="Expected (Weekday Baseline)",
-                    line=dict(
-                        color="#8493A8",
-                        width=1.5,
-                        dash="dash"
-                    ),
-                    hovertemplate=(
-                        "%{x|%d %b %Y}<br>"
-                        "Expected: %{y:,.2f}<extra></extra>"
-                    )
-                )
-            )
-
-        # Anomaly markers
         if flag_column in trend.columns:
             anomaly_mask = trend[flag_column].apply(is_true)
             anomaly_data = trend[anomaly_mask].dropna(
@@ -482,23 +475,20 @@ with trend_col:
             )
 
             if not anomaly_data.empty:
-                fig.add_trace(
-                    go.Scatter(
-                        x=anomaly_data["Date"],
-                        y=anomaly_data[actual_column],
-                        mode="markers",
-                        name="Anomaly",
-                        marker=dict(
-                            color="#FF3B30",
-                            size=8,
-                            symbol="circle"
-                        ),
-                        hovertemplate=(
-                            "%{x|%d %b %Y}<br>"
-                            "Anomaly value: %{y:,.2f}<extra></extra>"
-                        )
+                fig.add_trace(go.Scatter(
+                    x=anomaly_data["Date"],
+                    y=anomaly_data[actual_column],
+                    mode="markers",
+                    name="Anomaly",
+                    marker=dict(
+                        color="#FF3B30",
+                        size=8
+                    ),
+                    hovertemplate=(
+                        "%{x|%d %b %Y}<br>"
+                        "Anomaly: %{y:,.2f}<extra></extra>"
                     )
-                )
+                ))
 
         fig.update_layout(
             height=330,
@@ -515,15 +505,8 @@ with trend_col:
             yaxis_title=None
         )
 
-        fig.update_xaxes(
-            showgrid=False,
-            tickformat="%d %b"
-        )
-
-        fig.update_yaxes(
-            gridcolor="#E7ECF2",
-            zeroline=False
-        )
+        fig.update_xaxes(showgrid=False)
+        fig.update_yaxes(gridcolor="#E7ECF2")
 
         st.plotly_chart(
             fig,
@@ -532,20 +515,49 @@ with trend_col:
 
 
 # --------------------------------------------------
-# RIGHT: ALERTS BY PRIORITY
+# RIGHT: SINGLE ALERT PRIORITY DONUT
 # --------------------------------------------------
 with priority_col:
     st.subheader("Alerts by Priority")
 
-    if not alert_data.empty:
+    priority_source = alert_data.copy()
+
+    # Apply Geography and Category filters to the alert dates.
+    # These filters identify dates with matching product records;
+    # they do not establish that the selected category caused an alert.
+    if not priority_source.empty and not prod.empty:
+        matching_products = prod.copy()
+
+        if geo != "All" and "Geography" in matching_products.columns:
+            matching_products = matching_products[
+                matching_products["Geography"].astype(str) == str(geo)
+            ]
+
+        if category != "All" and "Category" in matching_products.columns:
+            matching_products = matching_products[
+                matching_products["Category"].astype(str) == str(category)
+            ]
+
+        matching_dates = set(
+            pd.to_datetime(matching_products["Date"]).dt.date
+        )
+
+        priority_source = priority_source[
+            pd.to_datetime(priority_source["Date"]).dt.date.isin(
+                matching_dates
+            )
+        ]
+
+    if not priority_source.empty:
         priority_counts = (
-            alert_data["Display_Priority"]
+            priority_source["Display_Priority"]
             .value_counts()
             .rename_axis("Priority")
             .reset_index(name="Alerts")
         )
 
-        # Use compact labels for the legend
+        total_alerts = int(priority_counts["Alerts"].sum())
+
         priority_fig = px.pie(
             priority_counts,
             names="Priority",
@@ -560,12 +572,8 @@ with priority_col:
             }
         )
 
-        total_alerts = int(priority_counts["Alerts"].sum())
-
         priority_fig.update_traces(
-            textposition="inside",
             textinfo="none",
-            hole=0.58,
             hovertemplate=(
                 "%{label}<br>"
                 "Alerts: %{value}<br>"
@@ -576,7 +584,6 @@ with priority_col:
         priority_fig.update_layout(
             height=330,
             margin=dict(l=0, r=0, t=15, b=10),
-            showlegend=True,
             legend=dict(
                 orientation="v",
                 x=1.02,
@@ -585,25 +592,24 @@ with priority_col:
                 yanchor="middle",
                 font=dict(size=10)
             ),
-            annotations=[
-                dict(
-                    text=f"<b>{total_alerts}</b><br>Alerts",
-                    x=0.43,
-                    y=0.5,
-                    font=dict(size=16),
-                    showarrow=False
-                )
-            ]
+            annotations=[dict(
+                text=f"<b>{total_alerts}</b><br>Alerts",
+                x=0.40,
+                y=0.5,
+                showarrow=False,
+                font=dict(size=16)
+            )]
         )
 
         st.plotly_chart(
             priority_fig,
             use_container_width=True
         )
+
+        st.caption(f"Geography: {geo} · Category: {category}")
+
     else:
-        st.info(
-            "No alerts match the selected date and priority filters."
-        )
+        st.info("No alerts match the selected filters.")
 
 # ==================================================
 # 9. ALERT PRIORITY AND INTERACTIVE CATEGORY INVESTIGATION
