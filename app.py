@@ -1576,8 +1576,9 @@ else:
         "No alerts match the selected date and priority filters."
     )
 
+
 # ==================================================
-# 12. ALERT INVESTIGATION AND RULE-BASED NARRATIVE
+# 12. ALERT INVESTIGATION: RULE-BASED + GEMINI
 # ==================================================
 st.subheader("Alert Investigation & Narrative")
 
@@ -1587,7 +1588,8 @@ if not alert_data.empty:
 
     selected_date = st.selectbox(
         "Select an alert date",
-        choices["Date_Label"].tolist()
+        choices["Date_Label"].tolist(),
+        key="investigation_alert_date"
     )
 
     selected_row = choices[
@@ -1604,8 +1606,8 @@ if not alert_data.empty:
     )
 
     st.write("**Affected KPIs:**", affected)
-    st.write("**Root-cause hypothesis:**", hypothesis)
-    st.write("**Confidence:**", confidence)
+    st.write("**Rule-based root-cause hypothesis:**", hypothesis)
+    st.write("**Rule-based confidence:**", confidence)
 
     with st.expander("Evidence from detected metrics", expanded=True):
         if evidence:
@@ -1625,12 +1627,66 @@ if not alert_data.empty:
 
     st.write("**Owner:**", owner)
     st.write("**Supporting Owner:**", supporting_owner)
-    st.write("**Recommended action:**", recommended_action)
+    st.write("**Rule-based recommended action:**", recommended_action)
 
-    st.info(
-        "This is a rule-based investigation narrative. The root cause "
-        "is a hypothesis, not a confirmed finding."
+    st.caption(
+        "The rule-based investigation is generated from dashboard rules. "
+        "Its root-cause explanation is a hypothesis, not a confirmed finding."
     )
+
+    st.divider()
+    st.markdown("### ✨ Gemini AI Investigation Narrative")
+    st.write(
+        "Generate an AI-written investigation using the selected alert's "
+        "KPI evidence, existing hypothesis and assigned ownership."
+    )
+
+    if st.button(
+        "Generate Gemini Narrative",
+        type="primary",
+        key="generate_gemini_narrative"
+    ):
+        with st.spinner("Gemini is analyzing the selected alert evidence..."):
+            gemini_text, gemini_error = generate_gemini_narrative(
+                selected_row=selected_row,
+                affected=affected,
+                hypothesis=hypothesis,
+                confidence=confidence,
+                evidence=evidence,
+                owner=owner,
+                supporting_owner=supporting_owner,
+                recommended_action=recommended_action
+            )
+
+        if gemini_text:
+            st.session_state["gemini_narrative_date"] = selected_date
+            st.session_state["gemini_narrative_text"] = gemini_text
+            st.session_state["gemini_narrative_error"] = None
+        else:
+            st.session_state["gemini_narrative_date"] = selected_date
+            st.session_state["gemini_narrative_text"] = None
+            st.session_state["gemini_narrative_error"] = gemini_error
+
+    if st.session_state.get("gemini_narrative_date") == selected_date:
+        saved_narrative = st.session_state.get("gemini_narrative_text")
+        saved_error = st.session_state.get("gemini_narrative_error")
+
+        if saved_narrative:
+            st.success("Generated successfully by Gemini")
+            st.markdown(saved_narrative)
+            st.caption(
+                f"Model: {st.secrets.get('GEMINI_MODEL', 'gemini-3.8-flash')}. "
+                "AI-generated analysis is advisory; validate hypotheses "
+                "before taking action."
+            )
+        elif saved_error:
+            st.error("Gemini could not generate a narrative.")
+            st.code(saved_error)
+            st.info(
+                "Your rule-based narrative remains available above. "
+                "Check the Gemini API key, model access, quota and app logs."
+            )
+
 else:
     st.info(
         "No alert is available for the selected date range and priority. "
