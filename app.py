@@ -1098,240 +1098,408 @@ if not expand_trend:
         else:
             st.info("No alerts match the selected filters.")
 
-# ==================================================
+
+# ==========================================================
 # 9 & 10. CATEGORY + PRODUCT INVESTIGATION SIDE BY SIDE
-# ==================================================
+# ==========================================================
 
 category_col, product_col = st.columns([1, 1])
 
-# --------------------------------------------------
-# PREPARE RAW PRODUCT DATA FOR THE SELECTED DATE RANGE
-# --------------------------------------------------
+# ----------------------------------------------------------
+# PREPARE PRODUCT DATA
+# ----------------------------------------------------------
+
 investigation_data = products.copy()
 
 investigation_data["Date"] = pd.to_datetime(
-    investigation_data["Date"]
+    investigation_data["Date"], errors="coerce"
 )
 
-range_start = pd.to_datetime(start_date)
-range_end = pd.to_datetime(end_date)
+investigation_data["Revenue_INR"] = pd.to_numeric(
+    investigation_data["Revenue_INR"], errors="coerce"
+)
 
-investigation_data = investigation_data[
-    (investigation_data["Date"].dt.date >= range_start.date())
-    & (investigation_data["Date"].dt.date <= range_end.date())
+investigation_data["Orders"] = pd.to_numeric(
+    investigation_data["Orders"], errors="coerce"
+)
+
+investigation_data = investigation_data.dropna(
+    subset=["Date", "Category"]
+)
+
+range_start = pd.to_datetime(start_date).normalize()
+range_end = pd.to_datetime(end_date).normalize()
+
+# Full historical data for baseline calculations.
+history_data = investigation_data.copy()
+
+# Apply geography consistently, but do NOT apply the sidebar category
+# filter to Category Investigation.
+if geo != "All" and "Geography" in history_data.columns:
+    history_data = history_data[
+        history_data["Geography"].astype(str) == str(geo)
+    ].copy()
+
+# Selected date range for actual investigation.
+selected_data = history_data[
+    (history_data["Date"] >= range_start)
+    & (
+        history_data["Date"]
+        < range_end + pd.Timedelta(days=1)
+    )
 ].copy()
 
-# Apply Geography to both investigations
-if geo != "All" and "Geography" in investigation_data.columns:
-    investigation_data = investigation_data[
-        investigation_data["Geography"].astype(str) == str(geo)
-    ]
+# ----------------------------------------------------------
+# SECTION 9: CATEGORY REVENUE SHORTFALL
+# ----------------------------------------------------------
 
-
-# --------------------------------------------------
-# LEFT: CATEGORY INVESTIGATION
-# Ignores the sidebar Category filter intentionally
-# --------------------------------------------------
 with category_col:
     st.subheader("Category Investigation")
 
-    category_metric = st.selectbox(
-        "Analyse categories by",
-        [
-            "Orders",
-            "Revenue (INR)",
-            "Weighted AOV (INR)",
-            "Cancellation Rate (%)"
-        ],
-        key="category_investigation_metric"
+    st.caption(
+        "Categories are shown independently of the sidebar Category "
+        "filter. Positive gaps indicate revenue below expectation."
     )
 
-    if not investigation_data.empty:
+    if selected_data.empty:
+        st.info("No category data exists for the selected filters.")
 
-        category_data = (
-            investigation_data.groupby("Category", as_index=False)
-            .agg(
-                Orders=("Orders", "sum"),
-                Revenue_INR=("Revenue_INR", "sum")
+    else:
+        # Actual revenue per category for the selected range.
+        category_actual = (
+            selected_data.groupby("Category", as_index=False)
+            .agg(Actual_Revenue=("Revenue_INR", "sum"))
+        )
+
+        # Aggregate the full history by date and category.
+        historical_category_daily = (
+            history_data.groupby(
+                ["Date", "Category"], as_index=False
+            )
+            .agg(Daily_Revenue=("Revenue_INR", "sum"))
+        )
+
+        historical_category_daily["Day_of_Week"] = (
+            historical_category_daily["Date"].dt.dayofweek
+        )
+
+        # Median category revenue for each weekday.
+        category_weekday_baseline = (
+            historical_category_daily.groupby(
+                ["Day_of_Week", "Category"]
+            )["Daily_Revenue"]
+            .median()
+            .rename("Weekday_Median")
+            .reset_index()
+        )
+
+        # Calculate weekday shares for allocation of the overall
+        # detector expectation. These shares sum to 1 per weekday
+        # where all category baselines are available.
+        category_weekday_baseline["Weekday_Total"] = (
+            category_weekday_baseline.groupby("Day_of_Week")[
+                "Weekday_Median"
+            ].transform("sum")
+        )
+
+        category_weekday_baseline["Category_Share"] = (
+            category_weekday_baseline["Weekday_Median"]
+            / category_weekday_baseline["Weekday_Total"].replace(
+                0, float("nan")
             )
         )
 
-        # Weighted AOV for the selected range
-        category_data["Weighted AOV (INR)"] = (
-            category_data["Revenue_INR"]
-            / category_data["Orders"].replace(0, float("nan"))
+        # Dates selected for the investigation.
+        expected_dates = pd.DataFrame({
+            "Date": pd.date_range(
+                range_start, range_end, freq="D"
+            )
+        })
+
+        expected_dates["Day_of_Week"] = (
+            expected_dates["Date"].dt.dayofweek
         )
 
-        # Order-weighted cancellation rate
-        cancellation_data = investigation_data.copy()
-
-        cancellation_data["Weighted_Cancellation"] = (
-            cancellation_data["Cancellation_Rate_Pct"]
-            * cancellation_data["Orders"]
-        )
-
-        cancellation_numerator = (
-            cancellation_data.groupby("Category")[
-                "Weighted_Cancellation"
-            ].sum()
-        )
-
-        cancellation_orders = (
-            cancellation_data.groupby("Category")["Orders"].sum()
-        )
-
-        category_data["Cancellation Rate (%)"] = (
-            category_data["Category"].map(cancellation_numerator)
-            / category_data["Category"].map(
-                cancellation_orders
-            ).replace(0, float("nan"))
-        )
-
-        metric_columns = {
-            "Orders": "Orders",
-            "Revenue (INR)": "Revenue_INR",
-            "Weighted AOV (INR)": "Weighted AOV (INR)",
-            "Cancellation Rate (%)": "Cancellation Rate (%)"
-        }
-
-        value_column = metric_columns[category_metric]
-
-        category_chart_data = (
-            category_data[["Category", value_column]]
-            .dropna()
-            .sort_values(value_column, ascending=False)
-        )
-
-        if not category_chart_data.empty:
-            category_fig = px.bar(
-                category_chart_data,
-                x="Category",
-                y=value_column,
-                title=f"{category_metric} by Category",
-                text_auto=".2s"
+        # All-geography expectation comes from the original detector.
+        if geo == "All":
+            detector_expected = det.copy()
+            detector_expected["Date"] = pd.to_datetime(
+                detector_expected["Date"], errors="coerce"
             )
 
-            category_fig.update_layout(
-                height=320,
-                margin=dict(l=5, r=5, t=45, b=5),
-                xaxis_title=None,
-                yaxis_title=category_metric,
-                xaxis_tickangle=-25,
-                showlegend=False
+            detector_expected = detector_expected[
+                ["Date", "Total_Revenue_INR_Expected"]
+            ].drop_duplicates(subset=["Date"])
+
+            expected_dates = expected_dates.merge(
+                detector_expected,
+                on="Date",
+                how="left"
             )
 
-            category_fig.update_traces(
-                hovertemplate=(
-                    "<b>%{x}</b><br>"
-                    + category_metric
-                    + ": %{y:,.2f}<extra></extra>"
+            expected_dates = expected_dates.rename(
+                columns={
+                    "Total_Revenue_INR_Expected":
+                    "Expected_Total_Revenue"
+                }
+            )
+
+        else:
+            # For a selected geography, calculate its weekday median
+            # from the full available historical geography data.
+            geography_daily = (
+                history_data.groupby("Date", as_index=False)
+                .agg(Geography_Revenue=("Revenue_INR", "sum"))
+            )
+
+            geography_daily["Day_of_Week"] = (
+                geography_daily["Date"].dt.dayofweek
+            )
+
+            geography_baseline = (
+                geography_daily.groupby("Day_of_Week")[
+                    "Geography_Revenue"
+                ].median()
+            )
+
+            expected_dates["Expected_Total_Revenue"] = (
+                expected_dates["Day_of_Week"].map(
+                    geography_baseline
                 )
             )
 
-            st.plotly_chart(
-                category_fig,
-                use_container_width=True
-            )
+        # Allocate expected total revenue to categories by weekday
+        # historical revenue shares.
+        expected_category_daily = expected_dates.merge(
+            category_weekday_baseline[
+                [
+                    "Day_of_Week",
+                    "Category",
+                    "Category_Share"
+                ]
+            ],
+            on="Day_of_Week",
+            how="left"
+        )
 
-            st.caption(
-                f"{start_date} to {end_date} | "
-                f"Geography: {geo} | All categories shown"
+        expected_category_daily["Expected_Revenue"] = (
+            expected_category_daily["Expected_Total_Revenue"]
+            * expected_category_daily["Category_Share"]
+        )
+
+        category_expected = (
+            expected_category_daily.groupby(
+                "Category", as_index=False
+            )
+            .agg(Expected_Revenue=("Expected_Revenue", "sum"))
+        )
+
+        # Combine actual and expected category revenue.
+        category_results = category_actual.merge(
+            category_expected,
+            on="Category",
+            how="outer"
+        ).fillna({
+            "Actual_Revenue": 0,
+            "Expected_Revenue": 0
+        })
+
+        category_results["Revenue_Shortfall"] = (
+            category_results["Expected_Revenue"]
+            - category_results["Actual_Revenue"]
+        )
+
+        positive_shortfall = category_results[
+            "Revenue_Shortfall"
+        ].clip(lower=0).sum()
+
+        if positive_shortfall > 0:
+            category_results["Shortfall_Contribution_Pct"] = (
+                category_results["Revenue_Shortfall"].clip(lower=0)
+                / positive_shortfall * 100
             )
         else:
-            st.info("No category values are available for this selection.")
-    else:
-        st.info("No product data matches the selected dates and Geography.")
+            category_results["Shortfall_Contribution_Pct"] = 0.0
 
+        category_results["Performance"] = category_results[
+            "Revenue_Shortfall"
+        ].apply(
+            lambda x: "Below expectation" if x > 0
+            else "Above expectation" if x < 0
+            else "At expectation"
+        )
 
-# --------------------------------------------------
-# RIGHT: PRODUCT-LEVEL INVESTIGATION
-# Uses the selected Category and Geography filters
-# --------------------------------------------------
+        # Largest positive shortfall first.
+        category_results = category_results.sort_values(
+            "Revenue_Shortfall", ascending=False
+        )
+
+        st.markdown("**Revenue shortfall by category**")
+
+        category_chart_data = category_results.sort_values(
+            "Revenue_Shortfall", ascending=True
+        )
+
+        category_fig = px.bar(
+            category_chart_data,
+            x="Revenue_Shortfall",
+            y="Category",
+            orientation="h",
+            color="Performance",
+            color_discrete_map={
+                "Below expectation": "#E74C3C",
+                "Above expectation": "#27AE60",
+                "At expectation": "#7F8C8D"
+            },
+            hover_data={
+                "Actual_Revenue": ":,.0f",
+                "Expected_Revenue": ":,.0f",
+                "Revenue_Shortfall": ":,.0f",
+                "Shortfall_Contribution_Pct": ":.1f"
+            },
+            labels={
+                "Revenue_Shortfall": "Expected − Actual (₹)",
+                "Category": "Category",
+                "Performance": "Status"
+            }
+        )
+
+        category_fig.add_vline(
+            x=0,
+            line_width=1,
+            line_color="#64748B"
+        )
+
+        category_fig.update_layout(
+            height=340,
+            margin=dict(l=5, r=5, t=15, b=5),
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                x=0,
+                font=dict(size=9)
+            ),
+            xaxis=dict(tickformat=",.2s"),
+            yaxis=dict(title=None, automargin=True)
+        )
+
+        st.plotly_chart(
+            category_fig,
+            use_container_width=True,
+            config={"displayModeBar": False}
+        )
+
+        st.caption(
+            "Red = below expectation; green = above expectation. "
+            "Contribution percentages use positive category shortfalls "
+            "only. These are investigation leads, not confirmed causes."
+        )
+
+        with st.expander("View category revenue figures"):
+            st.dataframe(
+                category_results[
+                    [
+                        "Category",
+                        "Actual_Revenue",
+                        "Expected_Revenue",
+                        "Revenue_Shortfall",
+                        "Shortfall_Contribution_Pct",
+                        "Performance"
+                    ]
+                ].rename(columns={
+                    "Actual_Revenue": "Actual Revenue (₹)",
+                    "Expected_Revenue": "Expected Revenue (₹)",
+                    "Revenue_Shortfall": "Revenue Gap (₹)",
+                    "Shortfall_Contribution_Pct":
+                        "Contribution to Positive Shortfall (%)"
+                }).style.format({
+                    "Actual Revenue (₹)": "₹{:,.0f}",
+                    "Expected Revenue (₹)": "₹{:,.0f}",
+                    "Revenue Gap (₹)": "₹{:,.0f}",
+                    "Contribution to Positive Shortfall (%)": "{:.1f}%"
+                }),
+                use_container_width=True,
+                hide_index=True
+            )
+
+# ----------------------------------------------------------
+# SECTION 10: PRODUCT-LEVEL INVESTIGATION
+# ----------------------------------------------------------
+
 with product_col:
     st.subheader("Product-Level Investigation")
 
-    product_metric = st.selectbox(
-        "Product breakdown by",
-        [
-            "Orders",
-            "Revenue (INR)",
-            "Cancellation Rate (%)"
-        ],
-        key="product_investigation_metric"
+    st.caption(
+        "Investigate products within the selected sidebar category."
     )
 
-    product_data = investigation_data.copy()
+    product_filtered = selected_data.copy()
 
-    # Apply Category filter ONLY to product investigation
-    if category != "All" and "Category" in product_data.columns:
-        product_data = product_data[
-            product_data["Category"].astype(str) == str(category)
-        ]
+    # The sidebar Category filter applies only to this product panel.
+    if category != "All" and "Category" in product_filtered.columns:
+        product_filtered = product_filtered[
+            product_filtered["Category"].astype(str) == str(category)
+        ].copy()
 
-    if not product_data.empty:
-        product_summary = (
-            product_data.groupby("Product_Name", as_index=False)
-            .agg(
-                Orders=("Orders", "sum"),
-                Revenue_INR=("Revenue_INR", "sum")
+    if product_filtered.empty:
+        st.info(
+            "No product data matches the selected date range, "
+            "geography, and category."
+        )
+
+    else:
+        product_metric = st.selectbox(
+            "Product breakdown by",
+            ["Revenue (INR)", "Orders"],
+            key="product_investigation_metric"
+        )
+
+        product_value_col = (
+            "Revenue_INR"
+            if product_metric == "Revenue (INR)"
+            else "Orders"
+        )
+
+        product_breakdown = (
+            product_filtered.groupby(
+                ["Product_Name"], as_index=False
             )
+            .agg(Value=(product_value_col, "sum"))
+            .sort_values("Value", ascending=False)
         )
 
-        # Order-weighted cancellation rate per product
-        product_data["Weighted_Cancellation"] = (
-            product_data["Cancellation_Rate_Pct"]
-            * product_data["Orders"]
-        )
+        # Pie charts work best with a manageable number of slices.
+        # Combine smaller products into "Other products".
+        top_n = 7
 
-        product_cancel = (
-            product_data.groupby("Product_Name")[
-                "Weighted_Cancellation"
-            ].sum()
-        )
+        if len(product_breakdown) > top_n:
+            top_products = product_breakdown.head(top_n).copy()
 
-        product_orders = (
-            product_data.groupby("Product_Name")["Orders"].sum()
-        )
+            other_value = product_breakdown.iloc[top_n:]["Value"].sum()
 
-        product_summary["Cancellation Rate (%)"] = (
-            product_summary["Product_Name"].map(product_cancel)
-            / product_summary["Product_Name"].map(
-                product_orders
-            ).replace(0, float("nan"))
-        )
+            if other_value > 0:
+                top_products = pd.concat(
+                    [
+                        top_products,
+                        pd.DataFrame({
+                            "Product_Name": ["Other products"],
+                            "Value": [other_value]
+                        })
+                    ],
+                    ignore_index=True
+                )
 
-        product_metric_columns = {
-            "Orders": "Orders",
-            "Revenue (INR)": "Revenue_INR",
-            "Cancellation Rate (%)": "Cancellation Rate (%)"
-        }
+            product_breakdown = top_products
 
-        product_value_column = product_metric_columns[product_metric]
-
-        pie_data = (
-            product_summary[
-                ["Product_Name", product_value_column]
-            ]
-            .dropna()
-        )
-
-        # Keep the pie chart readable with the top 8 products
-        pie_data = pie_data[
-            pie_data[product_value_column] >= 0
-        ].sort_values(
-            product_value_column, ascending=False
-        ).head(8)
-
-        if (
-            not pie_data.empty
-            and pie_data[product_value_column].sum() > 0
-        ):
+        if product_breakdown["Value"].sum() > 0:
             product_fig = px.pie(
-                pie_data,
+                product_breakdown,
                 names="Product_Name",
-                values=product_value_column,
-                title=f"{product_metric} by Product",
-                hole=0.30
+                values="Value",
+                hole=0.42,
+                title=f"{product_metric} by Product"
             )
 
             product_fig.update_traces(
@@ -1339,36 +1507,49 @@ with product_col:
                 textinfo="percent",
                 hovertemplate=(
                     "<b>%{label}</b><br>"
-                    "Value: %{value:,.2f}<br>"
+                    + product_metric
+                    + ": %{value:,.2f}<br>"
                     "Share: %{percent}<extra></extra>"
                 )
             )
 
             product_fig.update_layout(
-                height=320,
-                margin=dict(l=5, r=5, t=45, b=5),
+                height=340,
+                margin=dict(l=5, r=5, t=40, b=5),
                 legend=dict(
                     orientation="h",
                     yanchor="top",
-                    y=-0.08,
-                    x=0
+                    y=-0.05,
+                    x=0,
+                    font=dict(size=9)
                 )
             )
 
             st.plotly_chart(
                 product_fig,
-                use_container_width=True
+                use_container_width=True,
+                config={"displayModeBar": False}
             )
 
             st.caption(
-                f"{start_date} to {end_date} | "
-                f"Geography: {geo} | Category: {category} | "
-                "Top 8 products"
+                f"Date range: {range_start:%d %b %Y} to "
+                f"{range_end:%d %b %Y} | Geography: {geo} | "
+                f"Category filter: {category}"
             )
+
+            with st.expander("View product figures"):
+                st.dataframe(
+                    product_breakdown.rename(columns={
+                        "Product_Name": "Product",
+                        "Value": product_metric
+                    }),
+                    use_container_width=True,
+                    hide_index=True
+                )
         else:
-            st.info("No positive values are available for the product pie chart.")
-    else:
-        st.info("No products match the selected dates and filters.")
+            st.info(
+                "No positive values are available for this product chart."
+            )
 
 # ==================================================
 # 11. ACTIONABLE ALERT FEED WITH CATEGORY & PRODUCTS
