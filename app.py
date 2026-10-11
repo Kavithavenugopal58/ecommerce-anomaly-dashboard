@@ -1578,6 +1578,92 @@ else:
 
 
 # ==================================================
+# GEMINI AI NARRATIVE FUNCTION
+# ==================================================
+def generate_gemini_narrative(
+    selected_row,
+    affected,
+    hypothesis,
+    confidence,
+    evidence,
+    owner,
+    supporting_owner,
+    recommended_action
+):
+    """Generate an AI investigation narrative using Gemini."""
+
+    from google import genai
+    import streamlit as st
+
+    api_key = st.secrets.get("GEMINI_API_KEY", "")
+    model_name = st.secrets.get("GEMINI_MODEL", "gemini-3.8-flash")
+
+    if not api_key:
+        return None, "GEMINI_API_KEY is missing from Streamlit Secrets."
+
+    date_value = selected_row.get("Date", "Unknown")
+    if hasattr(date_value, "strftime"):
+        date_value = date_value.strftime("%Y-%m-%d")
+
+    evidence_text = "\n".join(
+        "- " + str(item) for item in evidence
+    ) if evidence else "No detailed evidence supplied."
+
+    prompt = f"""
+You are an e-commerce anomaly investigation analyst.
+
+Analyze this alert using only the supplied evidence.
+Do not invent facts. Root causes must remain hypotheses,
+not confirmed findings.
+
+Date: {date_value}
+Severity: {selected_row.get('Overall_Anomaly_Severity', 'Unknown')}
+Affected KPIs: {affected}
+Rule-based hypothesis: {hypothesis}
+Rule-based confidence: {confidence}
+
+Evidence:
+{evidence_text}
+
+Owner: {owner}
+Supporting Owner: {supporting_owner}
+Existing recommended action: {recommended_action}
+
+Write a concise business-friendly report with these headings:
+
+1. Alert Summary
+2. Business Impact
+3. Possible Root Causes
+4. Evidence and Limitations
+5. Three Prioritized Investigation Steps
+6. Ownership and Recommended Action
+
+Clearly separate observed evidence from possible explanations.
+Do not claim a cause is confirmed unless the evidence proves it.
+Preserve the assigned Owner and Supporting Owner.
+"""
+
+    try:
+        client = genai.Client(api_key=api_key)
+
+        response = client.interactions.create(
+            model=model_name,
+            input=prompt
+        )
+
+        narrative = (
+            getattr(response, "output_text", None) or ""
+        ).strip()
+
+        if narrative:
+            return narrative, None
+
+        return None, "Gemini returned an empty response."
+
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {str(exc)[:400]}"
+
+# ==================================================
 # 12. ALERT INVESTIGATION: RULE-BASED + GEMINI
 # ==================================================
 st.subheader("Alert Investigation & Narrative")
