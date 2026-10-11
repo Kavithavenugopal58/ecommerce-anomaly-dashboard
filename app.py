@@ -558,29 +558,19 @@ else:
     st.info("No product data matches the selected filters.")
 
 
+
 # ==================================================
-# 11. ACTIONABLE ALERT FEED WITH WRAPPED TEXT
+# 11. ACTIONABLE ALERT FEED WITH CATEGORY & PRODUCTS
 # ==================================================
 st.subheader("Actionable Alert Feed")
 
-display_columns = [
-    "Date",
-    "Display_Priority",
-    "Overall_Anomaly_Severity",
-    "Affected_KPI_Count",
-    "Owner",
-    "Supporting_Owner",
-    "Recommended_Action"
-]
-
-display_columns = [
-    column for column in display_columns
-    if column in alert_data.columns
-]
-
 if not alert_data.empty:
-    feed = alert_data.sort_values("Date", ascending=False).copy()
+    # Sort alerts with the latest date first
+    feed = alert_data.sort_values(
+        "Date", ascending=False
+    ).copy()
 
+    # Build category and product details for each alert date
     category_details = []
 
     for alert_date in feed["Date"]:
@@ -588,11 +578,13 @@ if not alert_data.empty:
             products["Date"].dt.date == alert_date.date()
         ].copy()
 
+        # Apply selected geography filter
         if geo != "All" and "Geography" in day_products.columns:
             day_products = day_products[
                 day_products["Geography"].astype(str) == geo
             ]
 
+        # Apply selected category filter
         if category != "All" and "Category" in day_products.columns:
             day_products = day_products[
                 day_products["Category"].astype(str) == category
@@ -614,6 +606,7 @@ if not alert_data.empty:
                 .sort_values(ascending=False)
             )
 
+            # Show the top five products by order volume
             product_names = ", ".join(
                 product_totals.head(5).index.astype(str)
             )
@@ -632,6 +625,7 @@ if not alert_data.empty:
             "Products in Category": " | ".join(summaries)
         })
 
+    # Attach category and product details to each alert
     details_df = pd.DataFrame(
         category_details,
         index=feed.index
@@ -639,6 +633,7 @@ if not alert_data.empty:
 
     feed = pd.concat([feed, details_df], axis=1)
 
+    # Arrange the columns in the desired order
     preferred_order = [
         "Date",
         "Display_Priority",
@@ -652,13 +647,14 @@ if not alert_data.empty:
     ]
 
     visible_columns = [
-        column for column in preferred_order
-        if column in feed.columns
+        col for col in preferred_order
+        if col in feed.columns
     ]
 
+    # Format date for display
     feed["Date"] = feed["Date"].dt.strftime("%Y-%m-%d")
 
-    # Convert the alert feed to HTML so long text can wrap
+    # Convert the table to HTML
     display_feed = feed[visible_columns].copy()
 
     html_table = display_feed.to_html(
@@ -667,14 +663,14 @@ if not alert_data.empty:
         classes="alert-table"
     )
 
-    # Style the table and wrap long text
+    # CSS: wrap only Category, Products and Recommended Action
     st.markdown(
         """
         <style>
         .alert-table {
             width: 100%;
             border-collapse: collapse;
-            table-layout: fixed;
+            table-layout: auto;
             font-size: 13px;
         }
 
@@ -683,11 +679,11 @@ if not alert_data.empty:
             border: 1px solid #d9dee7;
             padding: 9px;
             text-align: left;
-            white-space: normal !important;
-            overflow-wrap: anywhere;
-            word-break: normal;
             vertical-align: top;
             line-height: 1.5;
+            white-space: nowrap;
+            word-break: normal;
+            overflow-wrap: normal;
         }
 
         .alert-table th {
@@ -695,25 +691,38 @@ if not alert_data.empty:
             font-weight: 600;
         }
 
+        /* Category: allow wrapping */
         .alert-table th:nth-child(4),
         .alert-table td:nth-child(4) {
-            width: 22%;
+            white-space: normal;
+            overflow-wrap: break-word;
+            min-width: 180px;
+            max-width: 240px;
         }
 
+        /* Products within Category: allow wrapping */
         .alert-table th:nth-child(5),
         .alert-table td:nth-child(5) {
-            width: 25%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            min-width: 220px;
+            max-width: 320px;
         }
 
+        /* Recommended Action: allow wrapping */
         .alert-table th:last-child,
         .alert-table td:last-child {
-            width: 22%;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            min-width: 220px;
+            max-width: 300px;
         }
         </style>
         """,
         unsafe_allow_html=True
     )
 
+    # Display the styled alert feed
     st.markdown(
         html_table,
         unsafe_allow_html=True
@@ -721,14 +730,15 @@ if not alert_data.empty:
 
     st.caption(
         "Products shown are the top five by order volume within each "
-        "category for the alert date. Category and product details "
-        "provide investigation context, not proof of root cause."
+        "category for the alert date. These details support investigation "
+        "but do not prove the cause of an anomaly."
     )
 
 else:
     st.info(
         "No alerts match the selected date and priority filters."
     )
+
 # ==================================================
 # 12. ALERT INVESTIGATION AND RULE-BASED NARRATIVE
 # ==================================================
