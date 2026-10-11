@@ -306,66 +306,121 @@ st.caption(
     "charts below."
 )
 
-# ==================================================
-# 8. ACTUAL VS EXPECTED TREND
-# ==================================================
-st.subheader(f"{kpi_name}: Actual vs Expected")
 
-actual_column, expected_column, deviation_column, flag_column = (
-    KPI_OPTIONS[kpi_name]
+# ==================================================
+# 8. FOUR KPI TRENDS — SHOWN TOGETHER
+# ==================================================
+st.subheader("KPI Trend Overview")
+st.caption(
+    "All four KPIs are shown for the selected date range. "
+    "The dashed line is the expected baseline; red markers identify "
+    "dates flagged as anomalies by the existing detector."
 )
 
-trend = det.sort_values("Date").copy()
-
-if actual_column not in trend.columns:
-    st.warning(f"Required column is missing: {actual_column}")
-else:
+def add_kpi_chart(column, title, actual_col, expected_col, flag_col):
     fig = go.Figure()
 
-    fig.add_trace(
-        go.Scatter(
-            x=trend["Date"],
-            y=trend[actual_column],
-            mode="lines+markers",
-            name="Actual",
-            line=dict(width=3)
-        )
-    )
+    if actual_col not in det.columns:
+        column.warning(f"Missing column: {actual_col}")
+        return
 
-    if expected_column in trend.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=trend["Date"],
-                y=trend[expected_column],
-                mode="lines",
-                name="Expected baseline",
-                line=dict(dash="dash", width=2)
-            )
-        )
+    chart_data = det.sort_values("Date").copy()
 
-    if flag_column in trend.columns:
-        anomaly_mask = trend[flag_column].apply(is_true)
-        anomalies = trend[anomaly_mask]
+    fig.add_trace(go.Scatter(
+        x=chart_data["Date"],
+        y=chart_data[actual_col],
+        mode="lines+markers",
+        name="Actual",
+        line=dict(width=2.5, color="#2675C9"),
+        hovertemplate="%{x|%d %b %Y}<br>Actual: %{y:,.2f}<extra></extra>"
+    ))
+
+    if expected_col in chart_data.columns:
+        fig.add_trace(go.Scatter(
+            x=chart_data["Date"],
+            y=chart_data[expected_col],
+            mode="lines",
+            name="Expected",
+            line=dict(dash="dash", width=2, color="#E0A23D"),
+            hovertemplate="%{x|%d %b %Y}<br>Expected: %{y:,.2f}<extra></extra>"
+        ))
+
+    if flag_col in chart_data.columns:
+        anomaly_mask = chart_data[flag_col].apply(is_true)
+        anomalies = chart_data[anomaly_mask].dropna(
+            subset=[actual_col]
+        )
 
         if not anomalies.empty:
-            fig.add_trace(
-                go.Scatter(
-                    x=anomalies["Date"],
-                    y=anomalies[actual_column],
-                    mode="markers",
-                    name="Detected anomaly",
-                    marker=dict(size=11, symbol="x")
+            fig.add_trace(go.Scatter(
+                x=anomalies["Date"],
+                y=anomalies[actual_col],
+                mode="markers",
+                name="Anomaly",
+                marker=dict(
+                    color="#D64545",
+                    size=9,
+                    symbol="circle"
+                ),
+                hovertemplate=(
+                    "%{x|%d %b %Y}<br>"
+                    "Anomaly value: %{y:,.2f}<extra></extra>"
                 )
-            )
+            ))
 
     fig.update_layout(
-        height=400,
-        margin=dict(l=10, r=10, t=25, b=10),
+        title=title,
+        height=330,
+        margin=dict(l=10, r=10, t=45, b=10),
         hovermode="x unified",
-        legend=dict(orientation="h", y=1.1)
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            x=0
+        ),
+        xaxis_title=None,
+        yaxis_title=None
     )
 
-    st.plotly_chart(fig, use_container_width=True)
+    column.plotly_chart(fig, use_container_width=True)
+
+# Two rows, two charts per row
+orders_col, revenue_col = st.columns(2)
+
+add_kpi_chart(
+    orders_col,
+    "Orders",
+    "Total_Orders",
+    "Total_Orders_Expected",
+    "Orders_Is_Anomaly"
+)
+
+add_kpi_chart(
+    revenue_col,
+    "Revenue (INR)",
+    "Total_Revenue_INR",
+    "Total_Revenue_INR_Expected",
+    "Revenue_Is_Anomaly"
+)
+
+aov_col, cancellation_col = st.columns(2)
+
+add_kpi_chart(
+    aov_col,
+    "Average Order Value (INR)",
+    "Weighted_AOV_INR",
+    "Weighted_AOV_INR_Expected",
+    "AOV_Is_Anomaly"
+)
+
+add_kpi_chart(
+    cancellation_col,
+    "Cancellation Rate (%)",
+    "Avg_Cancellation_Rate_Pct",
+    "Avg_Cancellation_Rate_Pct_Expected",
+    "Cancellation_Rate_Is_Anomaly"
+)
 
 # ==================================================
 # 9. ALERT PRIORITY AND CATEGORY INVESTIGATION
