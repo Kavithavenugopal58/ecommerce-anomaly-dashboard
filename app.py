@@ -612,231 +612,278 @@ with priority_col:
         st.info("No alerts match the selected filters.")
 
 
+
 # ==================================================
-# 9. CATEGORY INVESTIGATION
-# Independent of the sidebar Category filter
+# 9 & 10. CATEGORY + PRODUCT INVESTIGATION SIDE BY SIDE
 # ==================================================
 
-st.subheader("Category Investigation")
+category_col, product_col = st.columns([1, 1])
 
-category_metric = st.selectbox(
-    "Analyse categories by",
-    [
-        "Orders",
-        "Revenue (INR)",
-        "Weighted AOV (INR)",
-        "Cancellation Rate (%)"
-    ],
-    key="category_investigation_metric"
+# --------------------------------------------------
+# PREPARE RAW PRODUCT DATA FOR THE SELECTED DATE RANGE
+# --------------------------------------------------
+investigation_data = products.copy()
+
+investigation_data["Date"] = pd.to_datetime(
+    investigation_data["Date"]
 )
 
-# Start with product-level data for the selected date range.
-# Do NOT apply the sidebar Category filter here.
-category_prod = prod.copy()
+range_start = pd.to_datetime(start_date)
+range_end = pd.to_datetime(end_date)
 
-# Apply the Geography filter only.
-if geo != "All" and "Geography" in category_prod.columns:
-    category_prod = category_prod[
-        category_prod["Geography"].astype(str) == str(geo)
+investigation_data = investigation_data[
+    (investigation_data["Date"].dt.date >= range_start.date())
+    & (investigation_data["Date"].dt.date <= range_end.date())
+].copy()
+
+# Apply Geography to both investigations
+if geo != "All" and "Geography" in investigation_data.columns:
+    investigation_data = investigation_data[
+        investigation_data["Geography"].astype(str) == str(geo)
     ]
 
-if not category_prod.empty and "Category" in category_prod.columns:
 
-    # Aggregate orders and revenue by category across the selected range.
-    category_data = (
-        category_prod.groupby("Category", as_index=False)
-        .agg(
-            Orders=("Orders", "sum"),
-            Revenue_INR=("Revenue_INR", "sum")
-        )
+# --------------------------------------------------
+# LEFT: CATEGORY INVESTIGATION
+# Ignores the sidebar Category filter intentionally
+# --------------------------------------------------
+with category_col:
+    st.subheader("Category Investigation")
+
+    category_metric = st.selectbox(
+        "Analyse categories by",
+        [
+            "Orders",
+            "Revenue (INR)",
+            "Weighted AOV (INR)",
+            "Cancellation Rate (%)"
+        ],
+        key="category_investigation_metric"
     )
 
-    # Weighted AOV across the selected range:
-    # category revenue divided by category orders.
-    category_data["Weighted AOV (INR)"] = (
-        category_data["Revenue_INR"]
-        / category_data["Orders"].replace(0, float("nan"))
-    )
+    if not investigation_data.empty:
 
-    # Calculate order-weighted cancellation rate.
-    cancellation_data = category_prod.copy()
-
-    cancellation_data["Weighted_Cancellation"] = (
-        cancellation_data["Cancellation_Rate_Pct"]
-        * cancellation_data["Orders"]
-    )
-
-    cancellation_numerator = (
-        cancellation_data.groupby("Category")[
-            "Weighted_Cancellation"
-        ].sum()
-    )
-
-    cancellation_orders = (
-        cancellation_data.groupby("Category")["Orders"].sum()
-    )
-
-    category_data["Cancellation Rate (%)"] = (
-        category_data["Category"].map(cancellation_numerator)
-        / category_data["Category"].map(
-            cancellation_orders
-        ).replace(0, float("nan"))
-    )
-
-    # Select the metric to display.
-    metric_columns = {
-        "Orders": "Orders",
-        "Revenue (INR)": "Revenue_INR",
-        "Weighted AOV (INR)": "Weighted AOV (INR)",
-        "Cancellation Rate (%)": "Cancellation Rate (%)"
-    }
-
-    value_column = metric_columns[category_metric]
-
-    chart_data = (
-        category_data[["Category", value_column]]
-        .dropna()
-        .sort_values(value_column, ascending=False)
-    )
-
-    if not chart_data.empty:
-
-        # Display a compact category chart.
-        category_fig = px.bar(
-            chart_data,
-            x="Category",
-            y=value_column,
-            title=f"{category_metric} by Category",
-            text_auto=".2s"
-        )
-
-        category_fig.update_layout(
-            height=300,
-            margin=dict(l=10, r=10, t=45, b=10),
-            xaxis_title=None,
-            yaxis_title=category_metric,
-            xaxis_tickangle=-20,
-            showlegend=False
-        )
-
-        category_fig.update_traces(
-            hovertemplate=(
-                "<b>%{x}</b><br>"
-                + category_metric
-                + ": %{y:,.2f}<extra></extra>"
+        category_data = (
+            investigation_data.groupby("Category", as_index=False)
+            .agg(
+                Orders=("Orders", "sum"),
+                Revenue_INR=("Revenue_INR", "sum")
             )
         )
 
-        st.plotly_chart(
-            category_fig,
-            use_container_width=True
+        # Weighted AOV for the selected range
+        category_data["Weighted AOV (INR)"] = (
+            category_data["Revenue_INR"]
+            / category_data["Orders"].replace(0, float("nan"))
         )
 
-        st.caption(
-            f"Date range: {start_date} to {end_date} | "
-            f"Geography: {geo} | "
-            "All categories are shown independently of the sidebar "
-            "Category filter."
+        # Order-weighted cancellation rate
+        cancellation_data = investigation_data.copy()
+
+        cancellation_data["Weighted_Cancellation"] = (
+            cancellation_data["Cancellation_Rate_Pct"]
+            * cancellation_data["Orders"]
         )
 
-        # Validate category totals against the filtered product data.
-        if category_metric == "Orders":
+        cancellation_numerator = (
+            cancellation_data.groupby("Category")[
+                "Weighted_Cancellation"
+            ].sum()
+        )
+
+        cancellation_orders = (
+            cancellation_data.groupby("Category")["Orders"].sum()
+        )
+
+        category_data["Cancellation Rate (%)"] = (
+            category_data["Category"].map(cancellation_numerator)
+            / category_data["Category"].map(
+                cancellation_orders
+            ).replace(0, float("nan"))
+        )
+
+        metric_columns = {
+            "Orders": "Orders",
+            "Revenue (INR)": "Revenue_INR",
+            "Weighted AOV (INR)": "Weighted AOV (INR)",
+            "Cancellation Rate (%)": "Cancellation Rate (%)"
+        }
+
+        value_column = metric_columns[category_metric]
+
+        category_chart_data = (
+            category_data[["Category", value_column]]
+            .dropna()
+            .sort_values(value_column, ascending=False)
+        )
+
+        if not category_chart_data.empty:
+            category_fig = px.bar(
+                category_chart_data,
+                x="Category",
+                y=value_column,
+                title=f"{category_metric} by Category",
+                text_auto=".2s"
+            )
+
+            category_fig.update_layout(
+                height=320,
+                margin=dict(l=5, r=5, t=45, b=5),
+                xaxis_title=None,
+                yaxis_title=category_metric,
+                xaxis_tickangle=-25,
+                showlegend=False
+            )
+
+            category_fig.update_traces(
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    + category_metric
+                    + ": %{y:,.2f}<extra></extra>"
+                )
+            )
+
+            st.plotly_chart(
+                category_fig,
+                use_container_width=True
+            )
+
             st.caption(
-                f"Category orders total: "
-                f"{category_data['Orders'].sum():,.0f}"
+                f"{start_date} to {end_date} | "
+                f"Geography: {geo} | All categories shown"
             )
-
-        elif category_metric == "Revenue (INR)":
-            st.caption(
-                f"Category revenue total: "
-                f"₹{category_data['Revenue_INR'].sum():,.2f}"
-            )
-
+        else:
+            st.info("No category values are available for this selection.")
     else:
-        st.info(
-            "No values are available for the selected metric."
-        )
+        st.info("No product data matches the selected dates and Geography.")
 
-else:
-    st.info(
-        "No product records match the selected date range and Geography."
-    )
 
-# ==================================================
-# 10. PRODUCT-LEVEL INVESTIGATION — PIE CHART
-# ==================================================
-st.subheader("Product-Level Investigation")
+# --------------------------------------------------
+# RIGHT: PRODUCT-LEVEL INVESTIGATION
+# Uses the selected Category and Geography filters
+# --------------------------------------------------
+with product_col:
+    st.subheader("Product-Level Investigation")
 
-if not prod.empty and "Product_Name" in prod.columns:
-    product_breakdown = (
-        prod.groupby("Product_Name", as_index=False)
-        .agg(
-            Orders=("Orders", "sum"),
-            Revenue_INR=("Revenue_INR", "sum"),
-            Cancellation_Rate_Pct=("Cancellation_Rate_Pct", "mean")
-        )
-        .sort_values("Orders", ascending=False)
-    )
-
-    # Choose what the pie chart should show
-    chart_metric = st.selectbox(
+    product_metric = st.selectbox(
         "Product breakdown by",
-        ["Orders", "Revenue (INR)", "Cancellation Rate (%)"]
+        [
+            "Orders",
+            "Revenue (INR)",
+            "Cancellation Rate (%)"
+        ],
+        key="product_investigation_metric"
     )
 
-    metric_columns = {
-        "Orders": "Orders",
-        "Revenue (INR)": "Revenue_INR",
-        "Cancellation Rate (%)": "Cancellation_Rate_Pct"
-    }
+    product_data = investigation_data.copy()
 
-    value_column = metric_columns[chart_metric]
+    # Apply Category filter ONLY to product investigation
+    if category != "All" and "Category" in product_data.columns:
+        product_data = product_data[
+            product_data["Category"].astype(str) == str(category)
+        ]
 
-    pie_data = product_breakdown[
-        product_breakdown[value_column].notna()
-        & (product_breakdown[value_column] >= 0)
-    ].copy()
-
-    if not pie_data.empty and pie_data[value_column].sum() > 0:
-        fig_product = px.pie(
-            pie_data,
-            names="Product_Name",
-            values=value_column,
-            title=f"{chart_metric} by Product",
-            hole=0.30
-        )
-
-        fig_product.update_traces(
-            textposition="inside",
-            textinfo="percent",
-            hovertemplate=(
-                "<b>%{label}</b><br>"
-                "Value: %{value:,.2f}<br>"
-                "Share: %{percent}<extra></extra>"
+    if not product_data.empty:
+        product_summary = (
+            product_data.groupby("Product_Name", as_index=False)
+            .agg(
+                Orders=("Orders", "sum"),
+                Revenue_INR=("Revenue_INR", "sum")
             )
         )
 
-        fig_product.update_layout(
-            height=480,
-            legend_title_text="Product",
-            margin=dict(l=10, r=10, t=60, b=10)
+        # Order-weighted cancellation rate per product
+        product_data["Weighted_Cancellation"] = (
+            product_data["Cancellation_Rate_Pct"]
+            * product_data["Orders"]
         )
 
-        st.plotly_chart(
-            fig_product,
-            use_container_width=True
+        product_cancel = (
+            product_data.groupby("Product_Name")[
+                "Weighted_Cancellation"
+            ].sum()
         )
 
-        st.caption(
-            "The pie chart shows each product's share of the selected "
-            "metric. It describes contribution, not the cause of an anomaly."
+        product_orders = (
+            product_data.groupby("Product_Name")["Orders"].sum()
         )
+
+        product_summary["Cancellation Rate (%)"] = (
+            product_summary["Product_Name"].map(product_cancel)
+            / product_summary["Product_Name"].map(
+                product_orders
+            ).replace(0, float("nan"))
+        )
+
+        product_metric_columns = {
+            "Orders": "Orders",
+            "Revenue (INR)": "Revenue_INR",
+            "Cancellation Rate (%)": "Cancellation Rate (%)"
+        }
+
+        product_value_column = product_metric_columns[product_metric]
+
+        pie_data = (
+            product_summary[
+                ["Product_Name", product_value_column]
+            ]
+            .dropna()
+        )
+
+        # Keep the pie chart readable with the top 8 products
+        pie_data = pie_data[
+            pie_data[product_value_column] >= 0
+        ].sort_values(
+            product_value_column, ascending=False
+        ).head(8)
+
+        if (
+            not pie_data.empty
+            and pie_data[product_value_column].sum() > 0
+        ):
+            product_fig = px.pie(
+                pie_data,
+                names="Product_Name",
+                values=product_value_column,
+                title=f"{product_metric} by Product",
+                hole=0.30
+            )
+
+            product_fig.update_traces(
+                textposition="inside",
+                textinfo="percent",
+                hovertemplate=(
+                    "<b>%{label}</b><br>"
+                    "Value: %{value:,.2f}<br>"
+                    "Share: %{percent}<extra></extra>"
+                )
+            )
+
+            product_fig.update_layout(
+                height=320,
+                margin=dict(l=5, r=5, t=45, b=5),
+                legend=dict(
+                    orientation="h",
+                    yanchor="top",
+                    y=-0.08,
+                    x=0
+                )
+            )
+
+            st.plotly_chart(
+                product_fig,
+                use_container_width=True
+            )
+
+            st.caption(
+                f"{start_date} to {end_date} | "
+                f"Geography: {geo} | Category: {category} | "
+                "Top 8 products"
+            )
+        else:
+            st.info("No positive values are available for the product pie chart.")
     else:
-        st.info("No positive values are available for this chart metric.")
-else:
-    st.info("No product data matches the selected filters.")
-
-
+        st.info("No products match the selected dates and filters.")
 
 # ==================================================
 # 11. ACTIONABLE ALERT FEED WITH CATEGORY & PRODUCTS
