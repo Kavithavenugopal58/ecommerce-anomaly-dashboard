@@ -282,41 +282,129 @@ if det.empty:
     st.warning("No daily records exist for the selected date range.")
     st.stop()
 
+
 # ==================================================
-# 7. KPI CARDS
+# 7. KPI CARDS — SELECTED DATE RANGE
 # ==================================================
 st.subheader("Business Performance Overview")
 
-latest = det.sort_values("Date").iloc[-1]
-card_columns = st.columns(4)
+# 'det' already contains daily data filtered to the selected date range.
+range_orders = det["Total_Orders"].sum()
+range_revenue = det["Total_Revenue_INR"].sum()
 
-card_specs = [
-    ("Total Orders", "Total_Orders", "count"),
-    ("Total Revenue", "Total_Revenue_INR", "currency"),
-    ("Weighted AOV", "Weighted_AOV_INR", "currency"),
-    ("Cancellation Rate", "Avg_Cancellation_Rate_Pct", "percent")
-]
-
-for column, (label, value_column, value_type) in zip(
-    card_columns, card_specs
-):
-    value = latest.get(value_column)
-
-    if value_type == "count":
-        display_value = number(value, 0)
-    elif value_type == "currency":
-        display_value = "₹" + number(value)
-    else:
-        display_value = number(value) + "%"
-
-    column.metric(label, display_value)
-
-st.caption(
-    "Cards show the latest overall daily KPI values within the selected "
-    "date range. Geography and category filters apply to investigation "
-    "charts below."
+# Weighted AOV for the entire selected range
+range_aov = (
+    range_revenue / range_orders
+    if range_orders and range_orders != 0
+    else 0
 )
 
+# Average of daily cancellation rates in the selected range
+range_cancellation = det[
+    "Avg_Cancellation_Rate_Pct"
+].mean()
+
+# Display the selected range clearly
+st.caption(
+    f"Summary for {start_date:%d %b %Y} – {end_date:%d %b %Y}"
+)
+
+# Format the KPI values
+orders_text = f"{range_orders:,.0f}"
+revenue_text = f"₹{range_revenue:,.0f}"
+aov_text = f"₹{range_aov:,.2f}"
+cancellation_text = (
+    f"{range_cancellation:.2f}%"
+    if pd.notna(range_cancellation)
+    else "N/A"
+)
+
+# Custom visual styling for the KPI cards
+st.markdown(
+    """
+    <style>
+    .kpi-card {
+        background: linear-gradient(135deg, #10284A, #245B86);
+        border-radius: 14px;
+        padding: 20px 18px;
+        min-height: 125px;
+        color: white;
+        box-shadow: 0 4px 12px rgba(16, 40, 74, 0.15);
+        border-bottom: 4px solid #58B4E8;
+    }
+    .kpi-label {
+        font-size: 14px;
+        font-weight: 500;
+        color: #DCEBFA;
+        margin-bottom: 12px;
+    }
+    .kpi-value {
+        font-size: 27px;
+        font-weight: 700;
+        color: #FFFFFF;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+    .kpi-note {
+        font-size: 11px;
+        color: #DCEBFA;
+        margin-top: 9px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# Four cards in one row
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+with kpi1:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">TOTAL ORDERS</div>
+            <div class="kpi-value">{orders_text}</div>
+            <div class="kpi-note">Sum across selected dates</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with kpi2:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">TOTAL REVENUE</div>
+            <div class="kpi-value">{revenue_text}</div>
+            <div class="kpi-note">Sum across selected dates</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with kpi3:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">WEIGHTED AOV</div>
+            <div class="kpi-value">{aov_text}</div>
+            <div class="kpi-note">Revenue ÷ orders</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+with kpi4:
+    st.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">AVG. CANCELLATION RATE</div>
+            <div class="kpi-value">{cancellation_text}</div>
+            <div class="kpi-note">Average of daily rates</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # ==================================================
 # 8. FOUR KPI TRENDS — SHOWN TOGETHER
