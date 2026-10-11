@@ -504,6 +504,43 @@ st.dataframe(
 )
 
 
+# TEMPORARY: COMPARE DETECTOR BASELINE WITH WEEKDAY MEDIAN
+
+baseline_validation = det.copy()
+
+baseline_validation["Date"] = pd.to_datetime(
+    baseline_validation["Date"], errors="coerce"
+)
+
+baseline_validation["Day_of_Week"] = (
+    baseline_validation["Date"].dt.day_name()
+)
+
+# Calculate a simple weekday median from actual daily revenue.
+weekday_medians = (
+    baseline_validation.groupby("Day_of_Week")["Total_Revenue_INR"]
+    .median()
+)
+
+baseline_validation["Simple_Weekday_Median"] = (
+    baseline_validation["Day_of_Week"].map(weekday_medians)
+)
+
+st.subheader("Detector Baseline vs Simple Weekday Median")
+
+st.dataframe(
+    baseline_validation[
+        [
+            "Date",
+            "Day_of_Week",
+            "Total_Revenue_INR",
+            "Total_Revenue_INR_Expected",
+            "Simple_Weekday_Median"
+        ]
+    ].tail(10),
+    use_container_width=True
+)
+
 
             
 
