@@ -446,6 +446,23 @@ st.dataframe(
 )
 
 
+# TEMPORARY: INSPECT ORIGINAL REVENUE BASELINE
+
+st.subheader("Revenue Baseline Diagnostic")
+
+st.dataframe(
+    det[
+        [
+            "Date",
+            "Total_Revenue_INR",
+            "Total_Revenue_INR_Expected",
+            "Total_Revenue_INR_Deviation_Pct",
+            "Day_of_Week"
+        ]
+    ].tail(10),
+    use_container_width=True
+)
+
 
 
 
