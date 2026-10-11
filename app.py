@@ -408,14 +408,15 @@ with kpi4:
 
 
 
+
 # ==================================================
-# 8. KPI TREND + ALERT PRIORITY (COMPACT LAYOUT)
+# 8. KPI TREND + ALERTS BY PRIORITY
 # ==================================================
 
 trend_col, priority_col = st.columns([2.2, 1])
 
 # --------------------------------------------------
-# LEFT: KPI TREND
+# LEFT: KPI TREND WITH ANOMALIES
 # --------------------------------------------------
 with trend_col:
     st.subheader("KPI Trend with Anomalies")
@@ -426,116 +427,140 @@ with trend_col:
         key="trend_kpi_selector"
     )
 
-    actual_column, expected_column, deviation_column, flag_column = (
-        KPI_OPTIONS[kpi_name]
-    )
+    (
+        actual_column,
+        expected_column,
+        deviation_column,
+        flag_column
+    ) = KPI_OPTIONS[kpi_name]
 
     trend = det.sort_values("Date").copy()
 
     if actual_column not in trend.columns:
         st.warning(f"Missing KPI column: {actual_column}")
+
     else:
         fig = go.Figure()
 
-        fig.add_trace(go.Scatter(
-            x=trend["Date"],
-            y=trend[actual_column],
-            mode="lines+markers",
-            name=kpi_name,
-            line=dict(color="#2675C9", width=2),
-            marker=dict(size=4),
-            hovertemplate=(
-                "%{x|%d %b %Y}<br>"
-                + kpi_name
-                + ": %{y:,.2f}<extra></extra>"
-            )
-        ))
-
-        if expected_column in trend.columns:
-            fig.add_trace(go.Scatter(
+        # Actual KPI trend
+        fig.add_trace(
+            go.Scatter(
                 x=trend["Date"],
-                y=trend[expected_column],
-                mode="lines",
-                name="Expected baseline",
-                line=dict(
-                    color="#8493A8",
-                    width=1.5,
-                    dash="dash"
-                ),
+                y=trend[actual_column],
+                mode="lines+markers",
+                name=kpi_name,
+                line=dict(color="#2675C9", width=2),
+                marker=dict(size=4),
                 hovertemplate=(
                     "%{x|%d %b %Y}<br>"
-                    "Expected: %{y:,.2f}<extra></extra>"
+                    + kpi_name
+                    + ": %{y:,.2f}<extra></extra>"
                 )
-            ))
-
-        if flag_column in trend.columns:
-            anomaly_mask = trend[flag_column].apply(is_true)
-            anomaly_data = trend[anomaly_mask].dropna(
-                subset=[actual_column]
             )
+        )
 
-            if not anomaly_data.empty:
-                fig.add_trace(go.Scatter(
-                    x=anomaly_data["Date"],
-                    y=anomaly_data[actual_column],
-                    mode="markers",
-                    name="Anomaly",
-                    marker=dict(
-                        color="#FF3B30",
-                        size=8
+        # Expected weekday baseline
+        if expected_column in trend.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=trend["Date"],
+                    y=trend[expected_column],
+                    mode="lines",
+                    name="Expected (Weekday Baseline)",
+                    line=dict(
+                        color="#8493A8",
+                        width=1.5,
+                        dash="dash"
                     ),
                     hovertemplate=(
                         "%{x|%d %b %Y}<br>"
-                        "Anomaly: %{y:,.2f}<extra></extra>"
+                        "Expected: %{y:,.2f}<extra></extra>"
                     )
-                ))
+                )
+            )
+
+        # Anomaly markers
+        if flag_column in trend.columns:
+            anomaly_mask = trend[flag_column].apply(is_true)
+
+            anomaly_data = trend[
+                anomaly_mask
+            ].dropna(subset=[actual_column])
+
+            if not anomaly_data.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=anomaly_data["Date"],
+                        y=anomaly_data[actual_column],
+                        mode="markers",
+                        name="Anomaly",
+                        marker=dict(
+                            color="#FF3B30",
+                            size=8,
+                            symbol="circle"
+                        ),
+                        hovertemplate=(
+                            "%{x|%d %b %Y}<br>"
+                            "Anomaly value: %{y:,.2f}<extra></extra>"
+                        )
+                    )
+                )
 
         fig.update_layout(
-            height=330,
-            margin=dict(l=10, r=10, t=15, b=10),
+            height=300,
+            margin=dict(l=10, r=10, t=25, b=10),
             hovermode="x unified",
             legend=dict(
                 orientation="h",
                 yanchor="bottom",
                 y=1.02,
                 x=0,
-                font=dict(size=10)
+                font=dict(size=9)
             ),
             xaxis_title=None,
             yaxis_title=None
         )
 
-        fig.update_xaxes(showgrid=False)
-        fig.update_yaxes(gridcolor="#E7ECF2")
+        fig.update_xaxes(
+            showgrid=False,
+            tickformat="%d %b"
+        )
+
+        fig.update_yaxes(
+            gridcolor="#E7ECF2",
+            zeroline=False
+        )
 
         st.plotly_chart(
             fig,
-            use_container_width=True
+            use_container_width=True,
+            config={"displayModeBar": False}
         )
 
 
 # --------------------------------------------------
-# RIGHT: SINGLE ALERT PRIORITY DONUT
+# RIGHT: COMPACT ALERT PRIORITY DONUT
 # --------------------------------------------------
 with priority_col:
     st.subheader("Alerts by Priority")
 
+    # alert_data should already reflect the selected date range
     priority_source = alert_data.copy()
 
-    # Apply Geography and Category filters to the alert dates.
-    # These filters identify dates with matching product records;
-    # they do not establish that the selected category caused an alert.
+    # Apply Geography and Category filters to matching alert dates
     if not priority_source.empty and not prod.empty:
         matching_products = prod.copy()
 
         if geo != "All" and "Geography" in matching_products.columns:
             matching_products = matching_products[
-                matching_products["Geography"].astype(str) == str(geo)
+                matching_products["Geography"].astype(str)
+                == str(geo)
             ]
 
         if category != "All" and "Category" in matching_products.columns:
             matching_products = matching_products[
-                matching_products["Category"].astype(str) == str(category)
+                matching_products["Category"].astype(str)
+                == str(category)
             ]
 
         matching_dates = set(
@@ -543,9 +568,9 @@ with priority_col:
         )
 
         priority_source = priority_source[
-            pd.to_datetime(priority_source["Date"]).dt.date.isin(
-                matching_dates
-            )
+            pd.to_datetime(
+                priority_source["Date"]
+            ).dt.date.isin(matching_dates)
         ]
 
     if not priority_source.empty:
@@ -558,60 +583,107 @@ with priority_col:
 
         total_alerts = int(priority_counts["Alerts"].sum())
 
-        priority_fig = px.pie(
-            priority_counts,
-            names="Priority",
-            values="Alerts",
-            hole=0.58,
-            color="Priority",
-            color_discrete_map={
-                "P1 - Immediate": "#FF3B30",
-                "P2 - High": "#FF7A00",
-                "P3 - Watch": "#FFBF00",
-                "P4 - Normal": "#36A269"
-            }
-        )
-
-        priority_fig.update_traces(
-            textinfo="none",
-            hovertemplate=(
-                "%{label}<br>"
-                "Alerts: %{value}<br>"
-                "Share: %{percent}<extra></extra>"
+        if total_alerts > 0:
+            # Calculate percentages
+            priority_counts["Percentage"] = (
+                priority_counts["Alerts"]
+                / total_alerts
+                * 100
             )
-        )
 
-        priority_fig.update_layout(
-            height=330,
-            margin=dict(l=0, r=0, t=15, b=10),
-            legend=dict(
-                orientation="v",
-                x=1.02,
-                y=0.5,
-                xanchor="left",
-                yanchor="middle",
-                font=dict(size=10)
-            ),
-            annotations=[dict(
-                text=f"<b>{total_alerts}</b><br>Alerts",
-                x=0.40,
-                y=0.5,
-                showarrow=False,
-                font=dict(size=16)
-            )]
-        )
+            # Shorten labels for the legend
+            priority_labels = {
+                "P1 - Immediate": "Critical",
+                "P2 - High": "High",
+                "P3 - Watch": "Watch",
+                "P4 - Normal": "Normal"
+            }
 
-        st.plotly_chart(
-            priority_fig,
-            use_container_width=True
-        )
+            priority_counts["Priority_Label"] = (
+                priority_counts["Priority"]
+                .map(priority_labels)
+                .fillna(priority_counts["Priority"])
+            )
 
-        st.caption(f"Geography: {geo} · Category: {category}")
+            priority_colors = {
+                "Critical": "#FF3B30",
+                "High": "#FF7A00",
+                "Watch": "#FFBF00",
+                "Normal": "#36A269"
+            }
+
+            # Create the donut chart
+            priority_fig = px.pie(
+                priority_counts,
+                names="Priority_Label",
+                values="Alerts",
+                hole=0.62,
+                color="Priority_Label",
+                color_discrete_map=priority_colors
+            )
+
+            # Display percentages inside slices
+            priority_fig.update_traces(
+                text=priority_counts["Percentage"].map(
+                    lambda value: f"{value:.0f}%"
+                ),
+                textinfo="text",
+                textposition="inside",
+                insidetextorientation="horizontal",
+                textfont=dict(size=12, color="white"),
+                sort=False,
+                hovertemplate=(
+                    "<b>%{label}</b><br>"
+                    "Alerts: %{value}<br>"
+                    "Share: %{percent}<extra></extra>"
+                )
+            )
+
+            priority_fig.update_layout(
+                height=240,
+                margin=dict(l=0, r=0, t=5, b=5),
+                showlegend=True,
+                legend=dict(
+                    orientation="v",
+                    x=1.0,
+                    y=0.5,
+                    xanchor="left",
+                    yanchor="middle",
+                    font=dict(size=10)
+                ),
+                uniformtext=dict(
+                    minsize=9,
+                    mode="hide"
+                ),
+                annotations=[
+                    dict(
+                        text=f"<b>{total_alerts}</b><br>Alerts",
+                        x=0.40,
+                        y=0.5,
+                        showarrow=False,
+                        font=dict(
+                            size=15,
+                            color="#23344D"
+                        )
+                    )
+                ]
+            )
+
+            st.plotly_chart(
+                priority_fig,
+                use_container_width=True,
+                config={"displayModeBar": False}
+            )
+
+            st.caption(
+                f"Geography: {geo} | Category: {category}"
+            )
+
+        else:
+            st.info("No alerts match the selected filters.")
 
     else:
         st.info("No alerts match the selected filters.")
-
-
 
 # ==================================================
 # 9 & 10. CATEGORY + PRODUCT INVESTIGATION SIDE BY SIDE
