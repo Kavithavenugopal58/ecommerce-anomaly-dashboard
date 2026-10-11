@@ -427,13 +427,14 @@ st.caption(
     "deviations and supporting evidence before assigning a root cause."
 )
 
+
 # ==================================================
-# 10. PRODUCT INVESTIGATION
+# 10. PRODUCT-LEVEL INVESTIGATION — PIE CHART
 # ==================================================
 st.subheader("Product-Level Investigation")
 
 if not prod.empty and "Product_Name" in prod.columns:
-    product_data_view = (
+    product_breakdown = (
         prod.groupby("Product_Name", as_index=False)
         .agg(
             Orders=("Orders", "sum"),
@@ -443,13 +444,63 @@ if not prod.empty and "Product_Name" in prod.columns:
         .sort_values("Orders", ascending=False)
     )
 
-    st.dataframe(
-        product_data_view.head(15),
-        use_container_width=True,
-        hide_index=True
+    # Choose what the pie chart should show
+    chart_metric = st.selectbox(
+        "Product breakdown by",
+        ["Orders", "Revenue (INR)", "Cancellation Rate (%)"]
     )
+
+    metric_columns = {
+        "Orders": "Orders",
+        "Revenue (INR)": "Revenue_INR",
+        "Cancellation Rate (%)": "Cancellation_Rate_Pct"
+    }
+
+    value_column = metric_columns[chart_metric]
+
+    pie_data = product_breakdown[
+        product_breakdown[value_column].notna()
+        & (product_breakdown[value_column] >= 0)
+    ].copy()
+
+    if not pie_data.empty and pie_data[value_column].sum() > 0:
+        fig_product = px.pie(
+            pie_data,
+            names="Product_Name",
+            values=value_column,
+            title=f"{chart_metric} by Product",
+            hole=0.30
+        )
+
+        fig_product.update_traces(
+            textposition="inside",
+            textinfo="percent",
+            hovertemplate=(
+                "<b>%{label}</b><br>"
+                "Value: %{value:,.2f}<br>"
+                "Share: %{percent}<extra></extra>"
+            )
+        )
+
+        fig_product.update_layout(
+            height=480,
+            legend_title_text="Product",
+            margin=dict(l=10, r=10, t=60, b=10)
+        )
+
+        st.plotly_chart(
+            fig_product,
+            use_container_width=True
+        )
+
+        st.caption(
+            "The pie chart shows each product's share of the selected "
+            "metric. It describes contribution, not the cause of an anomaly."
+        )
+    else:
+        st.info("No positive values are available for this chart metric.")
 else:
-    st.info("No product records match the selected filters.")
+    st.info("No product data matches the selected filters.")
 
 # ==================================================
 # 11. ACTIONABLE ALERT FEED
