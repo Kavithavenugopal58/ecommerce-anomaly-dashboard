@@ -413,6 +413,7 @@ with kpi4:
 
             
 
+
 # ==================================================
 # 8. INTERACTIVE KPI TREND + ALERTS BY PRIORITY
 # ==================================================
@@ -420,12 +421,11 @@ with kpi4:
 trend_col, priority_col = st.columns([2.2, 1])
 
 # --------------------------------------------------
-# LEFT: KPI TREND
+# LEFT: KPI TREND WITH CATEGORY FILTER
 # --------------------------------------------------
 with trend_col:
     st.subheader("KPI Trend with Anomalies")
 
-    # KPI selector
     kpi_name = st.selectbox(
         "Select KPI",
         [
@@ -437,7 +437,6 @@ with trend_col:
         key="trend_kpi_selector"
     )
 
-    # Category selector for the trend only
     trend_categories = ["All Categories"] + sorted(
         prod["Category"].dropna().astype(str).unique().tolist()
     )
@@ -448,9 +447,13 @@ with trend_col:
         key="trend_category_selector"
     )
 
+    # --------------------------------------------------
+    # OVERALL TREND: USE ORIGINAL DETECTOR RESULTS
+    # --------------------------------------------------
     if trend_category == "All Categories":
-        # Preserve the existing overall KPI trend and its detector baseline.
-        trend = det.sort_values("Date").copy()
+        trend = det.copy()
+        trend["Date"] = pd.to_datetime(trend["Date"])
+        trend = trend.sort_values("Date")
 
         trend_columns = {
             "Orders": (
@@ -475,233 +478,298 @@ with trend_col:
             )
         }
 
-        actual_column, expected_column, flag_column = (
-            trend_columns[kpi_name]
-        )
+        actual_col, expected_col, flag_col = trend_columns[kpi_name]
 
-        if actual_column not in trend.columns:
-            st.warning(f"Missing KPI column: {actual_column}")
+        if actual_col not in trend.columns:
+            st.warning(f"Missing KPI column: {actual_col}")
+
         else:
             fig = go.Figure()
 
             fig.add_trace(go.Scatter(
                 x=trend["Date"],
-                y=trend[actual_column],
+                y=trend[actual_col],
                 mode="lines+markers",
                 name=kpi_name,
                 line=dict(color="#2675C9", width=2),
-                marker=dict(size=4)
+                marker=dict(size=4),
+                hovertemplate=(
+                    "%{x|%d %b %Y}<br>"
+                    + kpi_name
+                    + ": %{y:,.2f}<extra></extra>"
+                )
             ))
 
-            if expected_column in trend.columns:
+            if expected_col in trend.columns:
                 fig.add_trace(go.Scatter(
                     x=trend["Date"],
-                    y=trend[expected_column],
+                    y=trend[expected_col],
                     mode="lines",
                     name="Expected baseline",
                     line=dict(
                         color="#8493A8",
                         width=1.5,
                         dash="dash"
+                    ),
+                    hovertemplate=(
+                        "%{x|%d %b %Y}<br>"
+                        "Expected: %{y:,.2f}<extra></extra>"
                     )
                 ))
 
-            if flag_column in trend.columns:
-                anomaly_mask = trend[flag_column].apply(is_true)
+            if flag_col in trend.columns:
+                anomaly_mask = trend[flag_col].apply(is_true)
                 anomaly_data = trend[
                     anomaly_mask
-                ].dropna(subset=[actual_column])
+                ].dropna(subset=[actual_col])
 
                 if not anomaly_data.empty:
                     fig.add_trace(go.Scatter(
                         x=anomaly_data["Date"],
-                        y=anomaly_data[actual_column],
+                        y=anomaly_data[actual_col],
                         mode="markers",
                         name="Anomaly",
-                        marker=dict(
-                            color="#FF3B30",
-                            size=8
+                        marker=dict(color="#FF3B30", size=8),
+                        hovertemplate=(
+                            "%{x|%d %b %Y}<br>"
+                            "Anomaly: %{y:,.2f}<extra></extra>"
                         )
                     ))
 
+    # --------------------------------------------------
+    # CATEGORY TREND: CALCULATE CATEGORY-SPECIFIC BASELINE
+    # --------------------------------------------------
     else:
-        # Calculate the selected category's daily metrics.
-        category_trend_data = prod[
+        category_history = prod[
             prod["Category"].astype(str) == trend_category
         ].copy()
 
-        category_trend_data["Date"] = pd.to_datetime(
-            category_trend_data["Date"]
+        category_history["Date"] = pd.to_datetime(
+            category_history["Date"]
         )
 
-        daily_category = (
-            category_trend_data.groupby("Date", as_index=False)
+        category_history = category_history.dropna(subset=["Date"])
+
+        # Build daily category totals from product-level data.
+        daily = (
+            category_history.groupby("Date", as_index=False)
             .agg(
                 Orders=("Orders", "sum"),
                 Revenue_INR=("Revenue_INR", "sum")
             )
         )
 
-        # Calculate weighted AOV by date.
-        daily_category["Weighted AOV (INR)"] = (
-            daily_category["Revenue_INR"]
-            / daily_category["Orders"].replace(0, float("nan"))
+        # Weighted AOV per date.
+        daily["Weighted AOV (INR)"] = (
+            daily["Revenue_INR"]
+            / daily["Orders"].replace(0, float("nan"))
         )
 
-        # Calculate order-weighted cancellation rate by date.
-        category_trend_data["Weighted_Cancellation"] = (
-            category_trend_data["Cancellation_Rate_Pct"]
-            * category_trend_data["Orders"]
+        # Order-weighted cancellation rate per date.
+        category_history["Weighted_Cancellation"] = (
+            category_history["Cancellation_Rate_Pct"]
+            * category_history["Orders"]
         )
 
-        cancellation_by_date = (
-            category_trend_data.groupby("Date")[
-                "Weighted_Cancellation"
-            ].sum()
+        cancellation_sum = category_history.groupby("Date")[
+            "Weighted_Cancellation"
+        ].sum()
+
+        order_sum = category_history.groupby("Date")["Orders"].sum()
+
+        daily["Cancellation Rate (%)"] = (
+            daily["Date"].map(cancellation_sum)
+            / daily["Date"].map(order_sum).replace(0, float("nan"))
         )
 
-        orders_by_date = (
-            category_trend_data.groupby("Date")["Orders"].sum()
-        )
+        daily = daily.sort_values("Date").copy()
+        daily["Day_of_Week"] = daily["Date"].dt.dayofweek
 
-        daily_category["Cancellation Rate (%)"] = (
-            daily_category["Date"].map(cancellation_by_date)
-            / daily_category["Date"].map(orders_by_date).replace(
-                0, float("nan")
-            )
-        )
+        # Use the selected date range for the chart.
+        range_start = pd.to_datetime(start_date).normalize()
+        range_end = pd.to_datetime(end_date).normalize()
 
-        # Respect the selected date range for display.
-        range_start = pd.to_datetime(start_date)
-        range_end = pd.to_datetime(end_date)
+        daily = daily[
+            (daily["Date"] >= range_start)
+            & (daily["Date"] < range_end + pd.Timedelta(days=1))
+        ].copy()
 
-        daily_category = daily_category[
-            (daily_category["Date"] >= range_start)
-            & (daily_category["Date"] <= range_end)
-        ].sort_values("Date")
+        metric_col = kpi_name
 
-        metric_column = kpi_name
-
-        # Build a weekday baseline from the category's historical data.
-        history = (
-            category_trend_data.groupby("Date", as_index=False)
+        # Use ALL available category history to calculate baselines.
+        category_history_daily = (
+            category_history.groupby("Date", as_index=False)
             .agg(
                 Orders=("Orders", "sum"),
                 Revenue_INR=("Revenue_INR", "sum")
             )
         )
 
-        history["Weighted AOV (INR)"] = (
-            history["Revenue_INR"]
-            / history["Orders"].replace(0, float("nan"))
-        )
-
-        history["Day_of_Week"] = history["Date"].dt.dayofweek
-
-        history_cancel = (
-            category_trend_data.groupby("Date")[
-                "Weighted_Cancellation"
-            ].sum()
-        )
-
-        history_orders = (
-            category_trend_data.groupby("Date")["Orders"].sum()
-        )
-
-        history["Cancellation Rate (%)"] = (
-            history["Date"].map(history_cancel)
-            / history["Date"].map(history_orders).replace(
+        category_history_daily["Weighted AOV (INR)"] = (
+            category_history_daily["Revenue_INR"]
+            / category_history_daily["Orders"].replace(
                 0, float("nan")
             )
         )
 
-        history["Day_of_Week"] = history["Date"].dt.dayofweek
+        history_cancellation = category_history.groupby("Date")[
+            "Weighted_Cancellation"
+        ].sum()
 
+        history_orders = category_history.groupby("Date")["Orders"].sum()
+
+        category_history_daily["Cancellation Rate (%)"] = (
+            category_history_daily["Date"].map(history_cancellation)
+            / category_history_daily["Date"].map(
+                history_orders
+            ).replace(0, float("nan"))
+        )
+
+        category_history_daily["Day_of_Week"] = (
+            category_history_daily["Date"].dt.dayofweek
+        )
+
+        # First choice: median for the same weekday.
         weekday_baseline = (
-            history.groupby("Day_of_Week")[metric_column]
+            category_history_daily.groupby("Day_of_Week")[metric_col]
             .median()
         )
 
-        daily_category["Day_of_Week"] = (
-            daily_category["Date"].dt.dayofweek
+        # Fallback: overall category historical median.
+        overall_baseline = category_history_daily[metric_col].median()
+
+        daily["Expected"] = daily["Day_of_Week"].map(weekday_baseline)
+
+        daily["Expected"] = daily["Expected"].fillna(overall_baseline)
+
+        # Calculate absolute deviation from expected.
+        category_history_daily["Expected"] = (
+            category_history_daily["Day_of_Week"].map(weekday_baseline)
         )
 
-        daily_category["Expected"] = (
-            daily_category["Day_of_Week"].map(weekday_baseline)
+        category_history_daily["Expected"] = (
+            category_history_daily["Expected"].fillna(overall_baseline)
         )
 
-        # Simple category-specific anomaly marker:
-        # absolute deviation greater than 3 MAD for that weekday.
-        history["Expected"] = history["Day_of_Week"].map(
-            weekday_baseline
-        )
-
-        history["Absolute_Deviation"] = (
-            history[metric_column] - history["Expected"]
+        category_history_daily["Absolute_Deviation"] = (
+            category_history_daily[metric_col]
+            - category_history_daily["Expected"]
         ).abs()
 
+        # Weekday MAD: median absolute deviation from the weekday baseline.
         weekday_mad = (
-            history.groupby("Day_of_Week")["Absolute_Deviation"]
-            .median()
+            category_history_daily.groupby("Day_of_Week")[
+                "Absolute_Deviation"
+            ].median()
         )
 
-        daily_category["MAD"] = (
-            daily_category["Day_of_Week"].map(weekday_mad)
+        daily["MAD"] = daily["Day_of_Week"].map(weekday_mad)
+
+        # Fallback MAD: overall median absolute deviation.
+        overall_mad = category_history_daily[
+            "Absolute_Deviation"
+        ].median()
+
+        daily["MAD"] = daily["MAD"].fillna(overall_mad)
+
+        # A zero MAD is valid for constant data but cannot be used
+        # as a multiplier threshold. Use a small tolerance instead.
+        daily["Deviation"] = (
+            daily[metric_col] - daily["Expected"]
+        ).abs()
+
+        daily["Is_Anomaly"] = (
+            daily["Deviation"] > (3 * daily["MAD"])
+        ) & daily["MAD"].notna() & daily["Expected"].notna()
+
+        # If MAD is zero, flag only deviations larger than a small,
+        # metric-relative tolerance.
+        zero_mad = daily["MAD"].fillna(0) == 0
+
+        metric_scale = max(
+            abs(float(overall_baseline))
+            if pd.notna(overall_baseline) else 0.0,
+            1.0
         )
 
-        daily_category["Is_Anomaly"] = (
-            (
-                daily_category[metric_column]
-                - daily_category["Expected"]
-            ).abs()
-            > 3 * daily_category["MAD"]
-        ) & daily_category["MAD"].notna()
+        tolerance = metric_scale * 0.01
+
+        daily.loc[zero_mad, "Is_Anomaly"] = (
+            daily.loc[zero_mad, "Deviation"] > tolerance
+        ) & daily.loc[zero_mad, "Expected"].notna()
 
         fig = go.Figure()
 
-        fig.add_trace(go.Scatter(
-            x=daily_category["Date"],
-            y=daily_category[metric_column],
-            mode="lines+markers",
-            name=f"{kpi_name} — {trend_category}",
-            line=dict(color="#2675C9", width=2),
-            marker=dict(size=4)
-        ))
-
-        fig.add_trace(go.Scatter(
-            x=daily_category["Date"],
-            y=daily_category["Expected"],
-            mode="lines",
-            name="Weekday median baseline",
-            line=dict(
-                color="#8493A8",
-                width=1.5,
-                dash="dash"
-            )
-        ))
-
-        anomaly_data = daily_category[
-            daily_category["Is_Anomaly"]
-        ]
-
-        if not anomaly_data.empty:
+        if not daily.empty:
             fig.add_trace(go.Scatter(
-                x=anomaly_data["Date"],
-                y=anomaly_data[metric_column],
-                mode="markers",
-                name="Potential anomaly",
-                marker=dict(
-                    color="#FF3B30",
-                    size=8
+                x=daily["Date"],
+                y=daily[metric_col],
+                mode="lines+markers",
+                name=f"{kpi_name} — {trend_category}",
+                line=dict(color="#2675C9", width=2),
+                marker=dict(size=4),
+                hovertemplate=(
+                    "%{x|%d %b %Y}<br>"
+                    + kpi_name
+                    + ": %{y:,.2f}<extra></extra>"
                 )
             ))
 
-        st.caption(
-            "Category-specific baseline: weekday median. "
-            "Markers are exploratory flags, not the original detector's alerts."
-        )
+            # Expected baseline is displayed even when it is flat.
+            if daily["Expected"].notna().any():
+                fig.add_trace(go.Scatter(
+                    x=daily["Date"],
+                    y=daily["Expected"],
+                    mode="lines+markers",
+                    name="Expected weekday baseline",
+                    line=dict(
+                        color="#8493A8",
+                        width=1.5,
+                        dash="dash"
+                    ),
+                    marker=dict(size=3),
+                    hovertemplate=(
+                        "%{x|%d %b %Y}<br>"
+                        "Expected: %{y:,.2f}<extra></extra>"
+                    )
+                ))
 
-    # Display the chart if it was created.
+            anomaly_data = daily[
+                daily["Is_Anomaly"].fillna(False)
+            ].dropna(subset=[metric_col])
+
+            if not anomaly_data.empty:
+                fig.add_trace(go.Scatter(
+                    x=anomaly_data["Date"],
+                    y=anomaly_data[metric_col],
+                    mode="markers",
+                    name="Potential anomaly",
+                    marker=dict(
+                        color="#FF3B30",
+                        size=9,
+                        symbol="circle"
+                    ),
+                    hovertemplate=(
+                        "%{x|%d %b %Y}<br>"
+                        "Potential anomaly: %{y:,.2f}<extra></extra>"
+                    )
+                ))
+
+            st.caption(
+                "Category baseline uses historical weekday medians, "
+                "with an overall-median fallback. Red markers use a "
+                "category-specific MAD rule and are exploratory flags, "
+                "not the original detector's alerts."
+            )
+        else:
+            st.warning(
+                "No daily records exist for this category in the selected "
+                "date range."
+            )
+
+    # --------------------------------------------------
+    # DISPLAY TREND CHART
+    # --------------------------------------------------
     if "fig" in locals():
         fig.update_layout(
             height=300,
@@ -733,13 +801,14 @@ with trend_col:
 
 # --------------------------------------------------
 # RIGHT: ALERTS BY PRIORITY
-# Keep the previous filtering behavior
 # --------------------------------------------------
 with priority_col:
     st.subheader("Alerts by Priority")
 
     priority_source = alert_data.copy()
 
+    # Preserve previous filter behavior:
+    # Geography/Category filters select dates with matching products.
     if not priority_source.empty and not prod.empty:
         matching_products = prod.copy()
 
