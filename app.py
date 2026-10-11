@@ -407,37 +407,97 @@ st.markdown(
     """
     <style>
     .kpi-card {
-        background: #FFFFFF;
-        border: 1px solid #D5DCE5;
-        border-radius: 10px;
-        padding: 15px 15px;
-        min-height: 112px;
-        color: #142B4D;
-        box-shadow: none;
-        border-top: 3px solid #AEB8C5;
+        position: relative;
+        background: #FFFFFF !important;
+        border: 1px solid #D8E0EA;
+        border-top: 4px solid #64748B;
+        border-radius: 12px;
+        padding: 16px 17px 15px;
+        min-height: 126px;
+        color: #172B46;
+        box-shadow: 0 3px 10px rgba(25, 45, 75, 0.06);
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(25, 45, 75, 0.10);
     }
     [data-testid="stMain"] [data-testid="column"] .kpi-card {
-        background: #FFFFFF;
+        background: #FFFFFF !important;
+    }
+    .kpi-card.orders { border-top-color: #2878D0; }
+    .kpi-card.revenue { border-top-color: #15966A; }
+    .kpi-card.aov { border-top-color: #D97706; }
+    .kpi-card.cancellation { border-top-color: #D9485F; }
+    .kpi-topline {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        margin-bottom: 10px;
     }
     .kpi-label {
-        font-size: 12px;
-        font-weight: 650;
-        letter-spacing: 0.035em;
-        color: #526985;
-        margin-bottom: 9px;
-    }
-    .kpi-value {
-        font-size: 27px;
+        font-size: 11px;
         font-weight: 750;
-        color: #10284A;
-        line-height: 1.25;
+        letter-spacing: 0.07em;
+        color: #596B82;
+        margin: 0;
+    }
+    .kpi-icon {
+        display: inline-flex;
+        width: 30px;
+        height: 30px;
+        align-items: center;
+        justify-content: center;
+        border-radius: 9px;
+        background: #F2F5F9;
+        font-size: 17px;
+    }
+    .orders .kpi-icon { background: #EAF3FF; }
+    .revenue .kpi-icon { background: #E7F7F0; }
+    .aov .kpi-icon { background: #FFF3E3; }
+    .cancellation .kpi-icon { background: #FDECEF; }
+    .kpi-value {
+        font-size: 28px;
+        font-weight: 800;
+        color: #14243A;
+        line-height: 1.2;
         overflow-wrap: anywhere;
+        font-variant-numeric: tabular-nums;
     }
     .kpi-note {
         font-size: 11px;
-        color: #647A93;
-        margin-top: 8px;
+        color: #718096;
+        margin-top: 9px;
     }
+    .priority-summary {
+        border: 1px solid #DCE3EB;
+        border-radius: 10px;
+        background: #FFFFFF;
+        padding: 12px 14px;
+        margin-top: 8px;
+        color: #24364B;
+    }
+    .priority-summary-title {
+        font-size: 13px;
+        font-weight: 750;
+        color: #26384D;
+        margin-bottom: 9px;
+    }
+    .priority-summary-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 0;
+        border-bottom: 1px solid #EDF0F4;
+        font-size: 11px;
+    }
+    .priority-summary-row:last-child { border-bottom: 0; }
+    .priority-summary-label { display: flex; align-items: center; gap: 7px; }
+    .priority-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .priority-summary-count { font-weight: 750; font-variant-numeric: tabular-nums; }
+    .priority-summary-note { font-size: 10px; line-height: 1.45; color: #718096; margin-top: 8px; }
     </style>
     """,
     unsafe_allow_html=True
@@ -449,8 +509,8 @@ kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 with kpi1:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">TOTAL ORDERS</div>
+        <div class="kpi-card orders">
+            <div class="kpi-topline"><div class="kpi-label">TOTAL ORDERS</div><span class="kpi-icon">▤</span></div>
             <div class="kpi-value">{orders_text}</div>
             <div class="kpi-note">Sum across selected dates</div>
         </div>
@@ -461,8 +521,8 @@ with kpi1:
 with kpi2:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">TOTAL REVENUE</div>
+        <div class="kpi-card revenue">
+            <div class="kpi-topline"><div class="kpi-label">TOTAL REVENUE</div><span class="kpi-icon">₹</span></div>
             <div class="kpi-value">{revenue_text}</div>
             <div class="kpi-note">Sum across selected dates</div>
         </div>
@@ -473,8 +533,8 @@ with kpi2:
 with kpi3:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">WEIGHTED AOV</div>
+        <div class="kpi-card aov">
+            <div class="kpi-topline"><div class="kpi-label">WEIGHTED AOV</div><span class="kpi-icon">↗</span></div>
             <div class="kpi-value">{aov_text}</div>
             <div class="kpi-note">Revenue ÷ orders</div>
         </div>
@@ -485,8 +545,8 @@ with kpi3:
 with kpi4:
     st.markdown(
         f"""
-        <div class="kpi-card">
-            <div class="kpi-label">AVG. CANCELLATION RATE</div>
+        <div class="kpi-card cancellation">
+            <div class="kpi-topline"><div class="kpi-label">AVG. CANCELLATION RATE</div><span class="kpi-icon">%</span></div>
             <div class="kpi-value">{cancellation_text}</div>
             <div class="kpi-note">Average of daily rates</div>
         </div>
@@ -1033,6 +1093,50 @@ if not expand_trend:
                 st.info("No alerts match the selected filters.")
         else:
             st.info("No alerts match the selected filters.")
+
+        # Compact response summary fills the unused space below the donut
+        # and gives users a quick operational interpretation of the alert mix.
+        summary_source = priority_source.copy()
+        if not summary_source.empty:
+            summary_counts = summary_source["Display_Priority"].value_counts().to_dict()
+        else:
+            summary_counts = {}
+
+        critical_count = int(summary_counts.get("P1 - Immediate", 0))
+        high_count = int(summary_counts.get("P2 - High", 0))
+        watch_count = int(summary_counts.get("P3 - Watch", 0))
+        total_visible_alerts = critical_count + high_count + watch_count + int(summary_counts.get("P4 - Normal", 0))
+
+        if critical_count > 0:
+            response_message = "Start with the critical alerts and validate the affected business process."
+        elif high_count > 0:
+            response_message = "Review high-priority alerts and confirm whether the deviation is persistent."
+        elif watch_count > 0:
+            response_message = "No immediate critical alerts; keep watch-level deviations under monitoring."
+        else:
+            response_message = "No priority alerts are currently visible for these filters."
+
+        st.markdown(
+            f"""
+            <div class="priority-summary">
+                <div class="priority-summary-title">Response at a glance</div>
+                <div class="priority-summary-row">
+                    <span class="priority-summary-label"><span class="priority-dot" style="background:#FF3B30"></span>Immediate triage</span>
+                    <span class="priority-summary-count">{critical_count} critical</span>
+                </div>
+                <div class="priority-summary-row">
+                    <span class="priority-summary-label"><span class="priority-dot" style="background:#FF7A00"></span>Investigate next</span>
+                    <span class="priority-summary-count">{high_count} high</span>
+                </div>
+                <div class="priority-summary-row">
+                    <span class="priority-summary-label"><span class="priority-dot" style="background:#FFBF00"></span>Continue monitoring</span>
+                    <span class="priority-summary-count">{watch_count} watch</span>
+                </div>
+                <div class="priority-summary-note">{response_message}</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 # ==========================================================
