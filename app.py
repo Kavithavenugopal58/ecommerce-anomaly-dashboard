@@ -18,11 +18,61 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    /* Overall canvas: pale blue should appear in the gutters between panels. */
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"] {
+        background: #EAF4FF !important;
+    }
+
     .block-container {
         max-width: 100%;
-        padding-left: 2rem;
-        padding-right: 2rem;
-        padding-top: 1.5rem;
+        padding-left: 1.25rem;
+        padding-right: 1.25rem;
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+    }
+
+    /* A pale, quiet sidebar that visually belongs to the dashboard. */
+    [data-testid="stSidebar"] {
+        background: #F3F8FE;
+        border-right: 1px solid #D5E6F8;
+    }
+
+    /* White grid cells; the blue canvas remains visible as the gaps. */
+    [data-testid="column"] {
+        background: #FFFFFF;
+        border: 1px solid #CFE3F8;
+        border-radius: 12px;
+        padding: 0.65rem 0.7rem 0.75rem 0.7rem;
+        box-shadow: 0 2px 7px rgba(36, 91, 134, 0.045);
+    }
+
+    /* Keep Plotly chart areas white, not blue. */
+    [data-testid="stPlotlyChart"] {
+        background: #FFFFFF !important;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    [data-testid="stDataFrame"],
+    [data-testid="stTable"] {
+        background: #FFFFFF;
+        border-radius: 8px;
+    }
+
+    /* Softer dashboard headings and dividers. */
+    h1, h2, h3, h4 {
+        color: #17365D;
+    }
+    hr {
+        border-color: #CFE3F8;
+    }
+
+    /* Slightly softer widgets in the filter sidebar. */
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        gap: 0.65rem;
     }
     </style>
     """,
@@ -324,31 +374,33 @@ st.markdown(
     """
     <style>
     .kpi-card {
-        background: linear-gradient(135deg, #10284A, #245B86);
-        border-radius: 14px;
-        padding: 20px 18px;
-        min-height: 125px;
-        color: white;
-        box-shadow: 0 4px 12px rgba(16, 40, 74, 0.15);
-        border-bottom: 4px solid #58B4E8;
+        background: #FFFFFF;
+        border: 1px solid #D5E7F8;
+        border-radius: 10px;
+        padding: 15px 15px;
+        min-height: 112px;
+        color: #142B4D;
+        box-shadow: 0 2px 8px rgba(36, 91, 134, 0.06);
+        border-top: 3px solid #8FC5F5;
     }
     .kpi-label {
-        font-size: 14px;
-        font-weight: 500;
-        color: #DCEBFA;
-        margin-bottom: 12px;
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.035em;
+        color: #526985;
+        margin-bottom: 9px;
     }
     .kpi-value {
         font-size: 27px;
-        font-weight: 700;
-        color: #FFFFFF;
+        font-weight: 750;
+        color: #10284A;
         line-height: 1.25;
         overflow-wrap: anywhere;
     }
     .kpi-note {
         font-size: 11px;
-        color: #DCEBFA;
-        margin-top: 9px;
+        color: #647A93;
+        margin-top: 8px;
     }
     </style>
     """,
@@ -788,6 +840,7 @@ with trend_col:
         yaxis_title=None
     )
 
+    fig.update_layout(paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF")
     fig.update_xaxes(showgrid=False)
     fig.update_yaxes(
         gridcolor="#E7ECF2",
@@ -898,6 +951,8 @@ if not expand_trend:
                 )
 
                 priority_fig.update_layout(
+                    paper_bgcolor="#FFFFFF",
+                    plot_bgcolor="#FFFFFF",
                     height=240,
                     margin=dict(l=0, r=0, t=5, b=5),
                     showlegend=True,
@@ -1216,6 +1271,8 @@ with category_col:
         )
 
         category_fig.update_layout(
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
             height=340,
             margin=dict(l=5, r=5, t=15, b=5),
             showlegend=True,
@@ -1359,6 +1416,8 @@ with product_col:
             )
 
             product_fig.update_layout(
+                paper_bgcolor="#FFFFFF",
+                plot_bgcolor="#FFFFFF",
                 height=340,
                 margin=dict(l=5, r=5, t=40, b=5),
                 legend=dict(
