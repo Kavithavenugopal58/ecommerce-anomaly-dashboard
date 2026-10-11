@@ -545,8 +545,12 @@ baseline_validation["Expected_to_Median_Ratio"] = (
 
 st.subheader("Full-History Revenue Baseline Validation")
 
+
 st.dataframe(
-    baseline_validation[
+    baseline_validation.loc[
+        baseline_validation["Date"].between(
+            "2024-04-15", "2024-04-18"
+        ),
         [
             "Date",
             "Day_of_Week",
@@ -555,9 +559,10 @@ st.dataframe(
             "Full_History_Weekday_Median",
             "Expected_to_Median_Ratio"
         ]
-    ].tail(10),
+    ],
     use_container_width=True
 )
+
 
 
             
