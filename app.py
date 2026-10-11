@@ -416,6 +416,7 @@ with kpi4:
 
 
 
+
 # ==================================================
 # 8. INTERACTIVE KPI TREND + ALERTS BY PRIORITY
 # ==================================================
@@ -456,8 +457,10 @@ with trend_col:
     # --------------------------------------------------
     if trend_category == "All Categories":
         trend = det.copy()
-        trend["Date"] = pd.to_datetime(trend["Date"])
-        trend = trend.sort_values("Date")
+        trend["Date"] = pd.to_datetime(
+            trend["Date"], errors="coerce"
+        )
+        trend = trend.dropna(subset=["Date"]).sort_values("Date")
 
         trend_columns = {
             "Orders": (
@@ -484,7 +487,9 @@ with trend_col:
 
         actual_col, expected_col, flag_col = trend_columns[kpi_name]
 
-        if actual_col in trend.columns:
+        if actual_col not in trend.columns:
+            st.warning(f"Missing KPI column: {actual_col}")
+        else:
             fig.add_trace(go.Scatter(
                 x=trend["Date"],
                 y=trend[actual_col],
@@ -507,7 +512,7 @@ with trend_col:
                     name="Expected baseline",
                     line=dict(
                         color="#E67E22",
-                        width=2,
+                        width=3,
                         dash="dash"
                     ),
                     hovertemplate=(
@@ -528,17 +533,19 @@ with trend_col:
                         y=anomaly_data[actual_col],
                         mode="markers",
                         name="Anomaly",
-                        marker=dict(color="#FF3B30", size=8),
+                        marker=dict(
+                            color="#FF3B30",
+                            size=9,
+                            symbol="circle"
+                        ),
                         hovertemplate=(
                             "%{x|%d %b %Y}<br>"
                             "Anomaly: %{y:,.2f}<extra></extra>"
                         )
                     ))
-        else:
-            st.warning(f"Missing KPI column: {actual_col}")
 
     # --------------------------------------------------
-    # CATEGORY TREND: HISTORICAL WEEKDAY BASELINE
+    # CATEGORY TREND: CATEGORY-SPECIFIC METRICS
     # --------------------------------------------------
     else:
         category_history = prod[
@@ -553,197 +560,224 @@ with trend_col:
             subset=["Date"]
         )
 
-        # Aggregate product data by date.
-        daily = (
-            category_history.groupby("Date", as_index=False)
-            .agg(
-                Orders=("Orders", "sum"),
-                Revenue_INR=("Revenue_INR", "sum")
-            )
-        )
+        if category_history.empty:
+            st.warning("No data is available for this category.")
 
-        daily["Weighted AOV (INR)"] = (
-            daily["Revenue_INR"]
-            / daily["Orders"].replace(0, float("nan"))
-        )
+        else:
+            # Convert numeric fields safely.
+            numeric_columns = [
+                "Orders",
+                "Revenue_INR",
+                "Cancellation_Rate_Pct"
+            ]
 
-        # Order-weighted cancellation rate.
-        category_history["Weighted_Cancellation"] = (
-            category_history["Cancellation_Rate_Pct"]
-            * category_history["Orders"]
-        )
-
-        cancellation_sum = category_history.groupby("Date")[
-            "Weighted_Cancellation"
-        ].sum()
-
-        orders_by_date = category_history.groupby("Date")[
-            "Orders"
-        ].sum()
-
-        daily["Cancellation Rate (%)"] = (
-            daily["Date"].map(cancellation_sum)
-            / daily["Date"].map(orders_by_date).replace(
-                0, float("nan")
-            )
-        )
-
-        daily["Day_of_Week"] = daily["Date"].dt.dayofweek
-
-        # Map display names to real dataframe column names.
-        metric_columns = {
-            "Orders": "Orders",
-            "Revenue (INR)": "Revenue_INR",
-            "Weighted AOV (INR)": "Weighted AOV (INR)",
-            "Cancellation Rate (%)": "Cancellation Rate (%)"
-        }
-
-        metric_col = metric_columns[kpi_name]
-
-        # Prepare the full category history for baseline calculations.
-        history = daily.copy().sort_values("Date")
-
-        range_start = pd.to_datetime(start_date).normalize()
-        range_end = pd.to_datetime(end_date).normalize()
-
-        # Weekday median baseline across all historical category data.
-        weekday_baseline = (
-            history.groupby("Day_of_Week")[metric_col].median()
-        )
-
-        overall_baseline = history[metric_col].median()
-
-        # Calculate expected values before applying the date filter.
-        daily["Expected"] = daily["Day_of_Week"].map(
-            weekday_baseline
-        )
-
-        daily["Expected"] = daily["Expected"].fillna(
-            overall_baseline
-        )
-
-        # Historical deviation from each date's expected value.
-        history["Expected"] = history["Day_of_Week"].map(
-            weekday_baseline
-        )
-
-        history["Expected"] = history["Expected"].fillna(
-            overall_baseline
-        )
-
-        history["Absolute_Deviation"] = (
-            history[metric_col] - history["Expected"]
-        ).abs()
-
-        weekday_mad = (
-            history.groupby("Day_of_Week")["Absolute_Deviation"].median()
-        )
-
-        overall_mad = history["Absolute_Deviation"].median()
-
-        daily["MAD"] = daily["Day_of_Week"].map(weekday_mad)
-        daily["MAD"] = daily["MAD"].fillna(overall_mad)
-
-        daily["Deviation"] = (
-            daily[metric_col] - daily["Expected"]
-        ).abs()
-
-        # Category-specific exploratory anomaly rule.
-        daily["Is_Anomaly"] = (
-            (daily["Deviation"] > 3 * daily["MAD"])
-            & daily["MAD"].notna()
-            & daily["Expected"].notna()
-        )
-
-        # Fallback for zero MAD: require a deviation greater than 1%
-        # of the historical metric scale.
-        zero_mad = daily["MAD"].fillna(0) == 0
-
-        metric_scale = max(
-            abs(float(overall_baseline))
-            if pd.notna(overall_baseline) else 0.0,
-            1.0
-        )
-
-        tolerance = metric_scale * 0.01
-
-        daily.loc[zero_mad, "Is_Anomaly"] = (
-            (daily.loc[zero_mad, "Deviation"] > tolerance)
-            & daily.loc[zero_mad, "Expected"].notna()
-        )
-
-        # Apply selected date range only to the displayed chart.
-        daily = daily[
-            (daily["Date"] >= range_start)
-            & (daily["Date"] < range_end + pd.Timedelta(days=1))
-        ].copy()
-
-        if not daily.empty:
-            fig.add_trace(go.Scatter(
-                x=daily["Date"],
-                y=daily[metric_col],
-                mode="lines+markers",
-                name=f"{kpi_name} — {trend_category}",
-                line=dict(color="#2675C9", width=2),
-                marker=dict(size=4),
-                hovertemplate=(
-                    "%{x|%d %b %Y}<br>"
-                    + kpi_name
-                    + ": %{y:,.2f}<extra></extra>"
+            for col in numeric_columns:
+                category_history[col] = pd.to_numeric(
+                    category_history[col], errors="coerce"
                 )
-            ))
 
-            # Orange dashed baseline, visible even when it overlaps
-            # closely with actual values.
-            fig.add_trace(go.Scatter(
-                x=daily["Date"],
-                y=daily["Expected"],
-                mode="lines+markers",
-                name="Expected weekday baseline",
-                line=dict(
-                    color="#E67E22",
-                    width=3,
-                    dash="dash"
-                ),
-                marker=dict(size=5, color="#E67E22"),
-                connectgaps=False,
-                hovertemplate=(
-                    "%{x|%d %b %Y}<br>"
-                    "Expected: %{y:,.2f}<extra></extra>"
+            # Aggregate the selected category by date.
+            daily = (
+                category_history.groupby("Date", as_index=False)
+                .agg(
+                    Orders=("Orders", "sum"),
+                    Revenue_INR=("Revenue_INR", "sum")
                 )
-            ))
+            )
 
-            anomaly_data = daily[
-                daily["Is_Anomaly"].fillna(False)
-            ].dropna(subset=[metric_col])
+            daily["Weighted AOV (INR)"] = (
+                daily["Revenue_INR"]
+                / daily["Orders"].replace(0, float("nan"))
+            )
 
-            if not anomaly_data.empty:
+            # Order-weighted cancellation rate.
+            category_history["Weighted_Cancellation"] = (
+                category_history["Cancellation_Rate_Pct"]
+                * category_history["Orders"]
+            )
+
+            cancellation_sum = category_history.groupby("Date")[
+                "Weighted_Cancellation"
+            ].sum()
+
+            orders_by_date = category_history.groupby("Date")[
+                "Orders"
+            ].sum()
+
+            daily["Cancellation Rate (%)"] = (
+                daily["Date"].map(cancellation_sum)
+                / daily["Date"].map(orders_by_date).replace(
+                    0, float("nan")
+                )
+            )
+
+            daily = daily.sort_values("Date").copy()
+            daily["Day_of_Week"] = daily["Date"].dt.dayofweek
+
+            metric_columns = {
+                "Orders": "Orders",
+                "Revenue (INR)": "Revenue_INR",
+                "Weighted AOV (INR)": "Weighted AOV (INR)",
+                "Cancellation Rate (%)": "Cancellation Rate (%)"
+            }
+
+            metric_col = metric_columns[kpi_name]
+
+            # Use the complete available category history for
+            # calculating expected values.
+            history = daily.copy().sort_values("Date")
+            history = history.reset_index(drop=True)
+
+            # --------------------------------------------------
+            # LEAVE-ONE-OUT WEEKDAY MEDIAN BASELINE
+            # Exclude each date from its own reference baseline.
+            # --------------------------------------------------
+            history["Expected"] = float("nan")
+            history["MAD"] = float("nan")
+
+            for idx in history.index:
+                current_weekday = history.loc[idx, "Day_of_Week"]
+
+                reference = history.loc[
+                    (history["Day_of_Week"] == current_weekday)
+                    & (history.index != idx),
+                    metric_col
+                ].dropna()
+
+                # If there are too few same-weekday observations,
+                # fall back to all other dates.
+                if len(reference) < 2:
+                    reference = history.loc[
+                        history.index != idx, metric_col
+                    ].dropna()
+
+                if not reference.empty:
+                    expected_value = reference.median()
+                    mad_value = (
+                        reference - expected_value
+                    ).abs().median()
+
+                    history.loc[idx, "Expected"] = expected_value
+                    history.loc[idx, "MAD"] = mad_value
+
+            # Use the same historical calculation for displayed dates.
+            daily = daily.merge(
+                history[["Date", "Expected", "MAD"]],
+                on="Date",
+                how="left"
+            )
+
+            daily["Deviation"] = (
+                daily[metric_col] - daily["Expected"]
+            ).abs()
+
+            # Category-specific exploratory anomaly rule.
+            metric_median = history[metric_col].median()
+
+            metric_scale = max(
+                abs(float(metric_median))
+                if pd.notna(metric_median) else 0.0,
+                1.0
+            )
+
+            tolerance = metric_scale * 0.01
+
+            daily["Is_Anomaly"] = (
+                daily["Expected"].notna()
+                & daily["MAD"].notna()
+                & (
+                    (
+                        (daily["MAD"] > 0)
+                        & (daily["Deviation"] > 3 * daily["MAD"])
+                    )
+                    | (
+                        (daily["MAD"] == 0)
+                        & (daily["Deviation"] > tolerance)
+                    )
+                )
+            )
+
+            # Filter the visible chart to the selected date range.
+            range_start = pd.to_datetime(start_date).normalize()
+            range_end = pd.to_datetime(end_date).normalize()
+
+            daily = daily[
+                (daily["Date"] >= range_start)
+                & (daily["Date"] < range_end + pd.Timedelta(days=1))
+            ].copy()
+
+            if daily.empty:
+                st.info(
+                    "No records exist for this category in the selected "
+                    "date range."
+                )
+
+            else:
                 fig.add_trace(go.Scatter(
-                    x=anomaly_data["Date"],
-                    y=anomaly_data[metric_col],
-                    mode="markers",
-                    name="Potential anomaly",
-                    marker=dict(
-                        color="#FF3B30",
-                        size=9,
-                        symbol="circle"
-                    ),
+                    x=daily["Date"],
+                    y=daily[metric_col],
+                    mode="lines+markers",
+                    name=f"{kpi_name} — {trend_category}",
+                    line=dict(color="#2675C9", width=2),
+                    marker=dict(size=4),
                     hovertemplate=(
                         "%{x|%d %b %Y}<br>"
-                        "Potential anomaly: %{y:,.2f}<extra></extra>"
+                        + kpi_name
+                        + ": %{y:,.2f}<extra></extra>"
                     )
                 ))
 
-            st.caption(
-                "Category baseline uses historical weekday medians, "
-                "with an overall-median fallback. Red markers use an "
-                "exploratory category-specific MAD rule, not the "
-                "original detector's alerts."
-            )
-        else:
-            st.info(
-                "No records exist for this category in the selected date range."
-            )
+                # Visually distinct expected baseline.
+                fig.add_trace(go.Scatter(
+                    x=daily["Date"],
+                    y=daily["Expected"],
+                    mode="lines+markers",
+                    name="Expected weekday baseline",
+                    line=dict(
+                        color="#E67E22",
+                        width=3,
+                        dash="dash"
+                    ),
+                    marker=dict(
+                        size=6,
+                        color="#E67E22",
+                        symbol="diamond"
+                    ),
+                    connectgaps=False,
+                    hovertemplate=(
+                        "%{x|%d %b %Y}<br>"
+                        "Expected: %{y:,.2f}<extra></extra>"
+                    )
+                ))
+
+                anomaly_data = daily[
+                    daily["Is_Anomaly"].fillna(False)
+                ].dropna(subset=[metric_col])
+
+                if not anomaly_data.empty:
+                    fig.add_trace(go.Scatter(
+                        x=anomaly_data["Date"],
+                        y=anomaly_data[metric_col],
+                        mode="markers",
+                        name="Potential anomaly",
+                        marker=dict(
+                            color="#FF3B30",
+                            size=10,
+                            symbol="circle"
+                        ),
+                        hovertemplate=(
+                            "%{x|%d %b %Y}<br>"
+                            "Potential anomaly: %{y:,.2f}"
+                            "<extra></extra>"
+                        )
+                    ))
+
+                st.caption(
+                    "Category expected values use a leave-one-out weekday "
+                    "median, with a fallback to other historical dates. "
+                    "Red markers are exploratory category-level flags, "
+                    "not the original detector's alerts."
+                )
 
     # --------------------------------------------------
     # DISPLAY KPI TREND
