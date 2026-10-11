@@ -406,123 +406,204 @@ with kpi4:
         unsafe_allow_html=True
     )
 
+
 # ==================================================
-# 8. FOUR KPI TRENDS — SHOWN TOGETHER
+# 8. COMPACT KPI TREND + ALERT PRIORITY CHART
 # ==================================================
-st.subheader("KPI Trend Overview")
-st.caption(
-    "All four KPIs are shown for the selected date range. "
-    "The dashed line is the expected baseline; red markers identify "
-    "dates flagged as anomalies by the existing detector."
-)
 
-def add_kpi_chart(column, title, actual_col, expected_col, flag_col):
-    fig = go.Figure()
+# Two side-by-side panels: trend on left, alert priority on right
+trend_col, priority_col = st.columns([2.2, 1])
 
-    if actual_col not in det.columns:
-        column.warning(f"Missing column: {actual_col}")
-        return
+# --------------------------------------------------
+# LEFT: SELECTABLE KPI TREND
+# --------------------------------------------------
+with trend_col:
+    st.subheader("KPI Trend with Anomalies")
 
-    chart_data = det.sort_values("Date").copy()
-
-    fig.add_trace(go.Scatter(
-        x=chart_data["Date"],
-        y=chart_data[actual_col],
-        mode="lines+markers",
-        name="Actual",
-        line=dict(width=2.5, color="#2675C9"),
-        hovertemplate="%{x|%d %b %Y}<br>Actual: %{y:,.2f}<extra></extra>"
-    ))
-
-    if expected_col in chart_data.columns:
-        fig.add_trace(go.Scatter(
-            x=chart_data["Date"],
-            y=chart_data[expected_col],
-            mode="lines",
-            name="Expected",
-            line=dict(dash="dash", width=2, color="#E0A23D"),
-            hovertemplate="%{x|%d %b %Y}<br>Expected: %{y:,.2f}<extra></extra>"
-        ))
-
-    if flag_col in chart_data.columns:
-        anomaly_mask = chart_data[flag_col].apply(is_true)
-        anomalies = chart_data[anomaly_mask].dropna(
-            subset=[actual_col]
-        )
-
-        if not anomalies.empty:
-            fig.add_trace(go.Scatter(
-                x=anomalies["Date"],
-                y=anomalies[actual_col],
-                mode="markers",
-                name="Anomaly",
-                marker=dict(
-                    color="#D64545",
-                    size=9,
-                    symbol="circle"
-                ),
-                hovertemplate=(
-                    "%{x|%d %b %Y}<br>"
-                    "Anomaly value: %{y:,.2f}<extra></extra>"
-                )
-            ))
-
-    fig.update_layout(
-        title=title,
-        height=330,
-        margin=dict(l=10, r=10, t=45, b=10),
-        hovermode="x unified",
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            x=0
-        ),
-        xaxis_title=None,
-        yaxis_title=None
+    kpi_name = st.selectbox(
+        "Select KPI",
+        list(KPI_OPTIONS.keys()),
+        key="trend_kpi_selector"
     )
 
-    column.plotly_chart(fig, use_container_width=True)
+    actual_column, expected_column, deviation_column, flag_column = (
+        KPI_OPTIONS[kpi_name]
+    )
 
-# Two rows, two charts per row
-orders_col, revenue_col = st.columns(2)
+    trend = det.sort_values("Date").copy()
 
-add_kpi_chart(
-    orders_col,
-    "Orders",
-    "Total_Orders",
-    "Total_Orders_Expected",
-    "Orders_Is_Anomaly"
-)
+    if actual_column not in trend.columns:
+        st.warning(f"Required column is missing: {actual_column}")
+    else:
+        fig = go.Figure()
 
-add_kpi_chart(
-    revenue_col,
-    "Revenue (INR)",
-    "Total_Revenue_INR",
-    "Total_Revenue_INR_Expected",
-    "Revenue_Is_Anomaly"
-)
+        # Actual KPI values
+        fig.add_trace(
+            go.Scatter(
+                x=trend["Date"],
+                y=trend[actual_column],
+                mode="lines+markers",
+                name=kpi_name,
+                line=dict(color="#2675C9", width=2),
+                marker=dict(size=4),
+                hovertemplate=(
+                    "%{x|%d %b %Y}<br>"
+                    + kpi_name
+                    + ": %{y:,.2f}<extra></extra>"
+                )
+            )
+        )
 
-aov_col, cancellation_col = st.columns(2)
+        # Expected baseline
+        if expected_column in trend.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=trend["Date"],
+                    y=trend[expected_column],
+                    mode="lines",
+                    name="Expected (Weekday Baseline)",
+                    line=dict(
+                        color="#8493A8",
+                        width=1.5,
+                        dash="dash"
+                    ),
+                    hovertemplate=(
+                        "%{x|%d %b %Y}<br>"
+                        "Expected: %{y:,.2f}<extra></extra>"
+                    )
+                )
+            )
 
-add_kpi_chart(
-    aov_col,
-    "Average Order Value (INR)",
-    "Weighted_AOV_INR",
-    "Weighted_AOV_INR_Expected",
-    "AOV_Is_Anomaly"
-)
+        # Anomaly markers
+        if flag_column in trend.columns:
+            anomaly_mask = trend[flag_column].apply(is_true)
+            anomaly_data = trend[anomaly_mask].dropna(
+                subset=[actual_column]
+            )
 
-add_kpi_chart(
-    cancellation_col,
-    "Cancellation Rate (%)",
-    "Avg_Cancellation_Rate_Pct",
-    "Avg_Cancellation_Rate_Pct_Expected",
-    "Cancellation_Rate_Is_Anomaly"
-)
+            if not anomaly_data.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=anomaly_data["Date"],
+                        y=anomaly_data[actual_column],
+                        mode="markers",
+                        name="Anomaly",
+                        marker=dict(
+                            color="#FF3B30",
+                            size=8,
+                            symbol="circle"
+                        ),
+                        hovertemplate=(
+                            "%{x|%d %b %Y}<br>"
+                            "Anomaly value: %{y:,.2f}<extra></extra>"
+                        )
+                    )
+                )
+
+        fig.update_layout(
+            height=330,
+            margin=dict(l=10, r=10, t=15, b=10),
+            hovermode="x unified",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                x=0,
+                font=dict(size=10)
+            ),
+            xaxis_title=None,
+            yaxis_title=None
+        )
+
+        fig.update_xaxes(
+            showgrid=False,
+            tickformat="%d %b"
+        )
+
+        fig.update_yaxes(
+            gridcolor="#E7ECF2",
+            zeroline=False
+        )
+
+        st.plotly_chart(
+            fig,
+            use_container_width=True
+        )
 
 
+# --------------------------------------------------
+# RIGHT: ALERTS BY PRIORITY
+# --------------------------------------------------
+with priority_col:
+    st.subheader("Alerts by Priority")
 
+    if not alert_data.empty:
+        priority_counts = (
+            alert_data["Display_Priority"]
+            .value_counts()
+            .rename_axis("Priority")
+            .reset_index(name="Alerts")
+        )
+
+        # Use compact labels for the legend
+        priority_fig = px.pie(
+            priority_counts,
+            names="Priority",
+            values="Alerts",
+            hole=0.58,
+            color="Priority",
+            color_discrete_map={
+                "P1 - Immediate": "#FF3B30",
+                "P2 - High": "#FF7A00",
+                "P3 - Watch": "#FFBF00",
+                "P4 - Normal": "#36A269"
+            }
+        )
+
+        total_alerts = int(priority_counts["Alerts"].sum())
+
+        priority_fig.update_traces(
+            textposition="inside",
+            textinfo="none",
+            hole=0.58,
+            hovertemplate=(
+                "%{label}<br>"
+                "Alerts: %{value}<br>"
+                "Share: %{percent}<extra></extra>"
+            )
+        )
+
+        priority_fig.update_layout(
+            height=330,
+            margin=dict(l=0, r=0, t=15, b=10),
+            showlegend=True,
+            legend=dict(
+                orientation="v",
+                x=1.02,
+                y=0.5,
+                xanchor="left",
+                yanchor="middle",
+                font=dict(size=10)
+            ),
+            annotations=[
+                dict(
+                    text=f"<b>{total_alerts}</b><br>Alerts",
+                    x=0.43,
+                    y=0.5,
+                    font=dict(size=16),
+                    showarrow=False
+                )
+            ]
+        )
+
+        st.plotly_chart(
+            priority_fig,
+            use_container_width=True
+        )
+    else:
+        st.info(
+            "No alerts match the selected date and priority filters."
+        )
 
 # ==================================================
 # 9. ALERT PRIORITY AND INTERACTIVE CATEGORY INVESTIGATION
