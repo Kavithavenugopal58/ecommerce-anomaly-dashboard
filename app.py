@@ -523,8 +523,9 @@ add_kpi_chart(
 
 
 
+
 # ==================================================
-# 9. ALERT PRIORITY AND CATEGORY INVESTIGATION
+# 9. ALERT PRIORITY AND INTERACTIVE CATEGORY INVESTIGATION
 # ==================================================
 
 left, right = st.columns(2)
@@ -557,12 +558,14 @@ with left:
             use_container_width=True
         )
     else:
-        st.info("No alerts match the selected date and priority filters.")
+        st.info(
+            "No alerts match the selected date and priority filters."
+        )
 
 
 # --------------------------------------------------
 # RIGHT: CATEGORY INVESTIGATION
-# Uses the same latest date as the KPI cards
+# Uses the entire selected date range
 # --------------------------------------------------
 with right:
     st.subheader("Category Investigation")
@@ -572,74 +575,61 @@ with right:
         [
             "Orders",
             "Revenue (INR)",
-            "Average Order Value (INR)",
+            "Weighted AOV (INR)",
             "Cancellation Rate (%)"
         ],
         key="category_investigation_metric"
     )
 
-    # Match the latest date used by the KPI cards
-    latest_kpi_date = det["Date"].max().date()
+    # 'prod' already contains the selected date range
+    # and the applied Geography/Category filters.
+    if not prod.empty and "Category" in prod.columns:
 
-    category_prod = prod[
-        prod["Date"].dt.date == latest_kpi_date
-    ].copy()
-
-    # Apply the same geography and category filters
-    if geo != "All" and "Geography" in category_prod.columns:
-        category_prod = category_prod[
-            category_prod["Geography"].astype(str) == geo
-        ]
-
-    if category != "All" and "Category" in category_prod.columns:
-        category_prod = category_prod[
-            category_prod["Category"].astype(str) == category
-        ]
-
-    if not category_prod.empty and "Category" in category_prod.columns:
-
-        # Aggregate orders and revenue by category for this date
+        # Aggregate orders and revenue across the selected period
         category_data = (
-            category_prod.groupby("Category", as_index=False)
+            prod.groupby("Category", as_index=False)
             .agg(
                 Orders=("Orders", "sum"),
                 Revenue_INR=("Revenue_INR", "sum")
             )
         )
 
-        # Calculate AOV from revenue divided by orders
-        category_data["Average Order Value (INR)"] = (
+        # Weighted AOV = total revenue / total orders
+        category_data["Weighted AOV (INR)"] = (
             category_data["Revenue_INR"]
             / category_data["Orders"].replace(0, float("nan"))
         )
 
         # Calculate order-weighted cancellation rate
-        category_prod["Weighted_Cancellation"] = (
-            category_prod["Cancellation_Rate_Pct"]
-            * category_prod["Orders"]
+        cancellation_data = prod.copy()
+
+        cancellation_data["Weighted_Cancellation"] = (
+            cancellation_data["Cancellation_Rate_Pct"]
+            * cancellation_data["Orders"]
         )
 
         cancellation_numerator = (
-            category_prod.groupby("Category")[
+            cancellation_data.groupby("Category")[
                 "Weighted_Cancellation"
             ].sum()
         )
 
-        category_orders = (
-            category_prod.groupby("Category")["Orders"].sum()
+        cancellation_orders = (
+            cancellation_data.groupby("Category")["Orders"].sum()
         )
 
         category_data["Cancellation Rate (%)"] = (
             category_data["Category"].map(cancellation_numerator)
-            / category_data["Category"].map(category_orders).replace(
-                0, float("nan")
-            )
+            / category_data["Category"].map(
+                cancellation_orders
+            ).replace(0, float("nan"))
         )
 
+        # Map the selected metric to its column
         metric_columns = {
             "Orders": "Orders",
             "Revenue (INR)": "Revenue_INR",
-            "Average Order Value (INR)": "Average Order Value (INR)",
+            "Weighted AOV (INR)": "Weighted AOV (INR)",
             "Cancellation Rate (%)": "Cancellation Rate (%)"
         }
 
@@ -683,30 +673,37 @@ with right:
             )
 
             st.caption(
-                f"Category breakdown date: {latest_kpi_date}. "
+                f"Date range: {start_date} to {end_date}. "
                 f"Geography: {geo}; Category filter: {category}."
             )
 
-            # Show validation total for Orders and Revenue
+            # Validation totals for Orders and Revenue
             if category_metric == "Orders":
+                category_total = category_data["Orders"].sum()
+                product_total = prod["Orders"].sum()
+
                 st.caption(
-                    f"Product-data orders total: "
-                    f"{category_data['Orders'].sum():,.0f}"
+                    f"Category total: {category_total:,.0f} orders | "
+                    f"Filtered product-data total: {product_total:,.0f}"
                 )
 
             elif category_metric == "Revenue (INR)":
+                category_total = category_data["Revenue_INR"].sum()
+                product_total = prod["Revenue_INR"].sum()
+
                 st.caption(
-                    f"Product-data revenue total: "
-                    f"₹{category_data['Revenue_INR'].sum():,.2f}"
+                    f"Category total: ₹{category_total:,.2f} | "
+                    f"Filtered product-data total: ₹{product_total:,.2f}"
                 )
 
         else:
-            st.info("No values are available for this metric.")
+            st.info(
+                "No values are available for this metric and filter selection."
+            )
 
     else:
         st.info(
-            "No product records exist for the latest selected date "
-            "and current filters."
+            "No product data matches the selected date range and filters."
         )
 
 # ==================================================
