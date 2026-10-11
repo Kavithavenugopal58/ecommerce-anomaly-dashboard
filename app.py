@@ -434,10 +434,11 @@ add_kpi_chart(
 )
 
 # ==================================================
-# 9. ALERT PRIORITY AND CATEGORY INVESTIGATION
+# 9. ALERT PRIORITY AND INTERACTIVE CATEGORY INVESTIGATION
 # ==================================================
 left, right = st.columns(2)
 
+# ----- LEFT: ALERT PRIORITY -----
 with left:
     st.subheader("Alerts by Priority")
 
@@ -455,43 +456,131 @@ with left:
             values="Alerts",
             hole=0.5
         )
+
         priority_fig.update_layout(height=350)
-        st.plotly_chart(priority_fig, use_container_width=True)
+
+        st.plotly_chart(
+            priority_fig,
+            use_container_width=True
+        )
     else:
         st.info("No alerts match the selected date and priority filters.")
 
+
+# ----- RIGHT: INTERACTIVE CATEGORY INVESTIGATION -----
 with right:
     st.subheader("Category Investigation")
 
+    category_metric = st.selectbox(
+        "Analyse categories by",
+        [
+            "Orders",
+            "Revenue (INR)",
+            "Average Order Value (INR)",
+            "Cancellation Rate (%)"
+        ],
+        key="category_investigation_metric"
+    )
+
     if not prod.empty and "Category" in prod.columns:
+
+        # Aggregate only the records matching the selected
+        # date range, geography and category filters.
         category_data = (
             prod.groupby("Category", as_index=False)
             .agg(
                 Orders=("Orders", "sum"),
                 Revenue_INR=("Revenue_INR", "sum")
             )
-            .sort_values("Orders", ascending=False)
         )
 
-        category_fig = px.bar(
-            category_data,
-            x="Category",
-            y="Orders",
-            title="Orders by category"
+        # Calculate AOV from total revenue / total orders.
+        category_data["Average Order Value (INR)"] = (
+            category_data["Revenue_INR"]
+            / category_data["Orders"].replace(0, float("nan"))
         )
-        category_fig.update_layout(
-            height=350,
-            xaxis_title="Category",
-            yaxis_title="Orders"
+
+        # Calculate order-weighted cancellation rate by category.
+        cancellation_numerator = (
+            prod.assign(
+                Weighted_Cancellation=(
+                    prod["Cancellation_Rate_Pct"] * prod["Orders"]
+                )
+            )
+            .groupby("Category")["Weighted_Cancellation"]
+            .sum()
         )
-        st.plotly_chart(category_fig, use_container_width=True)
+
+        category_orders = (
+            prod.groupby("Category")["Orders"].sum()
+        )
+
+        category_data["Cancellation Rate (%)"] = (
+            category_data["Category"].map(cancellation_numerator)
+            / category_data["Category"].map(category_orders).replace(
+                0, float("nan")
+            )
+        )
+
+        # Map the dropdown choice to the appropriate data column.
+        metric_columns = {
+            "Orders": "Orders",
+            "Revenue (INR)": "Revenue_INR",
+            "Average Order Value (INR)": "Average Order Value (INR)",
+            "Cancellation Rate (%)": "Cancellation Rate (%)"
+        }
+
+        value_column = metric_columns[category_metric]
+
+        chart_data = (
+            category_data[
+                ["Category", value_column]
+            ]
+            .dropna()
+            .sort_values(value_column, ascending=False)
+        )
+
+        if not chart_data.empty:
+            category_fig = px.bar(
+                chart_data,
+                x="Category",
+                y=value_column,
+                title=f"{category_metric} by Category",
+                text_auto=".2s"
+            )
+
+            category_fig.update_layout(
+                height=350,
+                xaxis_title="Category",
+                yaxis_title=category_metric,
+                xaxis_tickangle=-25,
+                margin=dict(l=10, r=10, t=50, b=10),
+                showlegend=False
+            )
+
+            category_fig.update_traces(
+                hovertemplate=(
+                    "<b>%{x}</b><br>"
+                    + category_metric
+                    + ": %{y:,.2f}<extra></extra>"
+                )
+            )
+
+            st.plotly_chart(
+                category_fig,
+                use_container_width=True
+            )
+
+            st.caption(
+                f"Showing {category_metric.lower()} for "
+                f"{start_date} to {end_date}. "
+                f"Geography: {geo}; Category filter: {category}."
+            )
+        else:
+            st.info("No values are available for this metric and filter selection.")
+
     else:
         st.info("No product data matches the selected filters.")
-
-st.caption(
-    "Category totals show contribution, not causation. Investigate "
-    "deviations and supporting evidence before assigning a root cause."
-)
 
 
 # ==================================================
