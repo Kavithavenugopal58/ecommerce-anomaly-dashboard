@@ -1781,17 +1781,17 @@ else:
 # SECTION 11: ACTIONABLE ALERT FEED STARTS BELOW
 # ==========================================================
 
+
 # ==========================================================
 # ADDITIONAL SECTION: CATEGORY KPI COMPARISON
+# Uses existing date and geography filters
 # ==========================================================
-
-import html
 
 st.subheader("Category KPI Comparison")
 
 st.caption(
-    "Compare actual performance against the historical weekday "
-    "baseline for each product category."
+    "Compare category performance over the selected date range "
+    "against historical weekday expectations."
 )
 
 category_kpi_extra = st.selectbox(
@@ -1805,49 +1805,54 @@ category_kpi_extra = st.selectbox(
     key="additional_category_kpi_selector",
 )
 
+extra_config = {
+    "Orders": {
+        "actual_col": "Orders",
+        "daily_col": "Orders",
+        "kind": "sum",
+        "format": "{:,.0f}",
+        "bad_direction": "lower",
+    },
+    "Revenue (INR)": {
+        "actual_col": "Revenue_INR",
+        "daily_col": "Revenue_INR",
+        "kind": "sum",
+        "format": "₹{:,.0f}",
+        "bad_direction": "lower",
+    },
+    "Average Order Value (AOV)": {
+        "actual_col": "AOV_INR",
+        "daily_col": "AOV_INR",
+        "kind": "ratio",
+        "format": "₹{:,.2f}",
+        "bad_direction": "lower",
+    },
+    "Cancellation Rate (%)": {
+        "actual_col": "Cancellation_Rate_Pct",
+        "daily_col": "Cancellation_Rate_Pct",
+        "kind": "rate",
+        "format": "{:.2f}%",
+        "bad_direction": "higher",
+    },
+}
+
+cfg = extra_config[category_kpi_extra]
+
 if selected_data.empty or history_data.empty:
-    st.info("No data available for the selected filters.")
+    st.info("No data is available for the selected date range.")
+
+elif cfg["actual_col"] not in history_data.columns:
+    st.error(
+        f"Required column '{cfg['actual_col']}' is missing."
+    )
 
 else:
-    extra_config = {
-        "Orders": {
-            "column": "Orders",
-            "type": "sum",
-            "format": "{:,.0f}",
-            "bad_direction": "lower",
-        },
-        "Revenue (INR)": {
-            "column": "Revenue_INR",
-            "type": "sum",
-            "format": "₹{:,.0f}",
-            "bad_direction": "lower",
-        },
-        "Average Order Value (AOV)": {
-            "column": "AOV_INR",
-            "type": "ratio",
-            "format": "₹{:,.2f}",
-            "bad_direction": "lower",
-        },
-        "Cancellation Rate (%)": {
-            "column": "Cancellation_Rate_Pct",
-            "type": "rate",
-            "format": "{:.2f}%",
-            "bad_direction": "higher",
-        },
-    }
+    extra_hist = history_data.copy()
+    extra_selected = selected_data.copy()
 
-    extra_cfg = extra_config[category_kpi_extra]
-    extra_value_col = extra_cfg["column"]
-
-    if extra_value_col not in history_data.columns:
-        st.error(
-            f"Missing required data column: {extra_value_col}"
-        )
-
-    else:
-        extra_hist = history_data.copy()
-        extra_hist["Date"] = pd.to_datetime(
-            extra_hist["Date"], errors="coerce"
+    for frame in [extra_hist, extra_selected]:
+        frame["Date"] = pd.to_datetime(
+            frame["Date"], errors="coerce"
         )
 
         for col in [
@@ -1856,327 +1861,375 @@ else:
             "AOV_INR",
             "Cancellation_Rate_Pct",
         ]:
-            if col in extra_hist.columns:
-                extra_hist[col] = pd.to_numeric(
-                    extra_hist[col], errors="coerce"
+            if col in frame.columns:
+                frame[col] = pd.to_numeric(
+                    frame[col], errors="coerce"
                 )
 
-        # Use the latest date from the currently selected range.
-        extra_dates = sorted(
-            pd.to_datetime(
-                selected_data["Date"], errors="coerce"
-            ).dropna().dt.normalize().unique()
+        frame.dropna(
+            subset=["Date", "Category"], inplace=True
         )
 
-        if not extra_dates:
-            st.info("No valid investigation dates are available.")
+    # ------------------------------------------------------
+    # ACTUAL VALUES OVER THE SELECTED DATE RANGE
+    # ------------------------------------------------------
 
-        else:
-            extra_selected_date = st.selectbox(
-                "Select comparison date",
-                extra_dates,
-                index=len(extra_dates) - 1,
-                format_func=lambda d: pd.Timestamp(d).strftime(
-                    "%d %b %Y"
-                ),
-                key="additional_category_comparison_date",
+    actual_rows = []
+
+    for cat, group in extra_selected.groupby("Category"):
+        orders = group["Orders"].sum()
+        revenue = group["Revenue_INR"].sum()
+
+        if category_kpi_extra == "Orders":
+            actual_value = orders
+
+        elif category_kpi_extra == "Revenue (INR)":
+            actual_value = revenue
+
+        elif category_kpi_extra == "Average Order Value (AOV)":
+            actual_value = (
+                revenue / orders
+                if orders > 0
+                else float("nan")
             )
 
-            extra_selected_date = pd.Timestamp(
-                extra_selected_date
-            ).normalize()
+        else:
+            weights = group["Orders"].clip(
+                lower=0
+            ).fillna(0)
 
-            # Aggregate data by date and category.
-            extra_daily_rows = []
+            valid = group["Cancellation_Rate_Pct"].notna()
+            valid_weights = weights[valid]
+            valid_rates = group.loc[
+                valid, "Cancellation_Rate_Pct"
+            ]
 
-            for (day, cat), group in extra_hist.groupby(
+            actual_value = (
+                (valid_rates * valid_weights).sum()
+                / valid_weights.sum()
+                if valid_weights.sum() > 0
+                else float("nan")
+            )
+
+        actual_rows.append({
+            "Category": cat,
+            "Actual": actual_value,
+        })
+
+    actual_df = pd.DataFrame(actual_rows)
+
+    # ------------------------------------------------------
+    # HISTORICAL DAILY KPI BY CATEGORY
+    # ------------------------------------------------------
+
+    daily_rows = []
+
+    for (day, cat), group in extra_hist.groupby(
+        [extra_hist["Date"].dt.normalize(), "Category"]
+    ):
+        orders = group["Orders"].sum()
+        revenue = group["Revenue_INR"].sum()
+
+        if category_kpi_extra == "Orders":
+            value = orders
+
+        elif category_kpi_extra == "Revenue (INR)":
+            value = revenue
+
+        elif category_kpi_extra == "Average Order Value (AOV)":
+            value = (
+                revenue / orders
+                if orders > 0
+                else float("nan")
+            )
+
+        else:
+            weights = group["Orders"].clip(
+                lower=0
+            ).fillna(0)
+
+            valid = group["Cancellation_Rate_Pct"].notna()
+            valid_weights = weights[valid]
+            valid_rates = group.loc[
+                valid, "Cancellation_Rate_Pct"
+            ]
+
+            value = (
+                (valid_rates * valid_weights).sum()
+                / valid_weights.sum()
+                if valid_weights.sum() > 0
+                else float("nan")
+            )
+
+        daily_rows.append({
+            "Date": pd.Timestamp(day),
+            "Category": cat,
+            "Daily_Value": value,
+        })
+
+    daily_df = pd.DataFrame(daily_rows)
+
+    if daily_df.empty:
+        st.info("No historical category data is available.")
+
+    else:
+        daily_df["Weekday"] = daily_df["Date"].dt.dayofweek
+
+        # Same-weekday historical median for each category.
+        weekday_baseline = (
+            daily_df.groupby(
+                ["Category", "Weekday"]
+            )["Daily_Value"]
+            .median()
+            .rename("Weekday_Expected")
+            .reset_index()
+        )
+
+        # Build the selected date range using the existing filters.
+        range_start_extra = pd.to_datetime(
+            extra_selected["Date"].min()
+        ).normalize()
+
+        range_end_extra = pd.to_datetime(
+            extra_selected["Date"].max()
+        ).normalize()
+
+        expected_dates = pd.DataFrame({
+            "Date": pd.date_range(
+                range_start_extra,
+                range_end_extra,
+                freq="D",
+            )
+        })
+
+        expected_dates["Weekday"] = (
+            expected_dates["Date"].dt.dayofweek
+        )
+
+        category_names = sorted(
+            extra_hist["Category"].dropna().unique()
+        )
+
+        expected_dates["_key"] = 1
+        category_frame = pd.DataFrame({
+            "Category": category_names,
+            "_key": 1,
+        })
+
+        expected_grid = expected_dates.merge(
+            category_frame, on="_key"
+        ).drop(columns="_key")
+
+        expected_grid = expected_grid.merge(
+            weekday_baseline,
+            on=["Category", "Weekday"],
+            how="left",
+        )
+
+        # Sum expected daily counts/revenue.
+        # Average expected daily AOV/cancellation rate.
+        if cfg["kind"] == "sum":
+            expected_df = (
+                expected_grid.groupby(
+                    "Category", as_index=False
+                )
+                .agg(
+                    Expected=(
+                        "Weekday_Expected",
+                        lambda s: s.sum(min_count=1),
+                    )
+                )
+            )
+        else:
+            expected_df = (
+                expected_grid.groupby(
+                    "Category", as_index=False
+                )
+                .agg(
+                    Expected=("Weekday_Expected", "mean")
+                )
+            )
+
+        # --------------------------------------------------
+        # DEVIATION AND DISPLAY
+        # --------------------------------------------------
+
+        results = actual_df.merge(
+            expected_df,
+            on="Category",
+            how="outer",
+        )
+
+        results["Deviation_Pct"] = (
+            (results["Actual"] - results["Expected"])
+            / results["Expected"].where(
+                results["Expected"] != 0
+            )
+            * 100
+        )
+
+        if cfg["bad_direction"] == "higher":
+            results["Unfavourable"] = (
+                results["Deviation_Pct"] > 0
+            )
+        else:
+            results["Unfavourable"] = (
+                results["Deviation_Pct"] < 0
+            )
+
+        results["Status"] = results.apply(
+            lambda row: (
+                "Unfavourable"
+                if pd.notna(row["Deviation_Pct"])
+                and bool(row["Unfavourable"])
+                else "Favourable"
+                if pd.notna(row["Deviation_Pct"])
+                else "Baseline unavailable"
+            ),
+            axis=1,
+        )
+
+        results = results.sort_values(
+            "Actual", ascending=True, na_position="first"
+        )
+
+        results["Deviation_Label"] = results[
+            "Deviation_Pct"
+        ].apply(
+            lambda x: f"{x:+.1f}%" if pd.notna(x) else "N/A"
+        )
+
+        results["Actual_Label"] = results["Actual"].apply(
+            lambda x: cfg["format"].format(x)
+            if pd.notna(x) else "N/A"
+        )
+
+        results["Expected_Label"] = results["Expected"].apply(
+            lambda x: cfg["format"].format(x)
+            if pd.notna(x) else "N/A"
+        )
+
+        results["Bar_Color"] = results["Status"].map({
+            "Unfavourable": "#E74C3C",
+            "Favourable": "#15966A",
+            "Baseline unavailable": "#94A3B8",
+        })
+
+        st.markdown(
+            f"**{category_kpi_extra} by Product Category**"
+        )
+
+        st.caption(
+            f"Date range: {range_start_extra:%d %b %Y} – "
+            f"{range_end_extra:%d %b %Y}"
+        )
+
+        # Native Plotly horizontal bar chart.
+        # Values are actual KPI values; hover shows expected and deviation.
+        import plotly.graph_objects as go
+
+        fig_extra = go.Figure()
+
+        for status in [
+            "Unfavourable",
+            "Favourable",
+            "Baseline unavailable",
+        ]:
+            part = results[results["Status"] == status]
+
+            if part.empty:
+                continue
+
+            fig_extra.add_trace(
+                go.Bar(
+                    x=part["Actual"],
+                    y=part["Category"],
+                    orientation="h",
+                    name=status,
+                    marker_color=part["Bar_Color"],
+                    text=part["Actual_Label"],
+                    textposition="outside",
+                    cliponaxis=False,
+                    customdata=part[
+                        [
+                            "Expected_Label",
+                            "Deviation_Label",
+                        ]
+                    ].to_numpy(),
+                    hovertemplate=(
+                        "<b>%{y}</b><br>"
+                        "Actual: %{text}<br>"
+                        "Expected: %{customdata[0]}<br>"
+                        "Deviation: %{customdata[1]}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+
+        fig_extra.update_layout(
+            barmode="overlay",
+            paper_bgcolor="#FFFFFF",
+            plot_bgcolor="#FFFFFF",
+            height=max(300, 48 * len(results) + 90),
+            margin=dict(l=5, r=65, t=10, b=35),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                x=0,
+            ),
+            xaxis=dict(
+                title=f"Actual {category_kpi_extra}",
+                showgrid=True,
+                gridcolor="#E8EDF3",
+                zeroline=False,
+            ),
+            yaxis=dict(
+                title="",
+                showgrid=False,
+                automargin=True,
+            ),
+        )
+
+        st.plotly_chart(
+            fig_extra,
+            use_container_width=True,
+            config={"displayModeBar": False},
+        )
+
+        # Compact detail table with deviation percentages.
+        with st.expander("View actual, expected and deviation by category"):
+            detail_df = results[
                 [
-                    extra_hist["Date"].dt.normalize(),
                     "Category",
+                    "Actual_Label",
+                    "Expected_Label",
+                    "Deviation_Label",
+                    "Status",
                 ]
-            ):
-                orders = group["Orders"].sum()
-                revenue = group["Revenue_INR"].sum()
+            ].rename(columns={
+                "Actual_Label": "Actual",
+                "Expected_Label": "Expected",
+                "Deviation_Label": "Deviation vs Expected",
+            })
 
-                if category_kpi_extra == "Orders":
-                    metric_value = orders
+            st.dataframe(
+                detail_df,
+                use_container_width=True,
+                hide_index=True,
+            )
 
-                elif category_kpi_extra == "Revenue (INR)":
-                    metric_value = revenue
-
-                elif category_kpi_extra == "Average Order Value (AOV)":
-                    metric_value = (
-                        revenue / orders
-                        if orders > 0
-                        else float("nan")
-                    )
-
-                else:
-                    weights = group["Orders"].clip(
-                        lower=0
-                    ).fillna(0)
-
-                    valid = group[
-                        "Cancellation_Rate_Pct"
-                    ].notna()
-
-                    valid_weights = weights[valid]
-                    valid_rates = group.loc[
-                        valid, "Cancellation_Rate_Pct"
-                    ]
-
-                    metric_value = (
-                        (valid_rates * valid_weights).sum()
-                        / valid_weights.sum()
-                        if valid_weights.sum() > 0
-                        else float("nan")
-                    )
-
-                extra_daily_rows.append({
-                    "Date": pd.Timestamp(day),
-                    "Category": cat,
-                    "Metric": metric_value,
-                })
-
-            extra_daily = pd.DataFrame(extra_daily_rows)
-
-            if extra_daily.empty:
-                st.info("No category metrics were found.")
-
-            else:
-                extra_daily["Weekday"] = (
-                    extra_daily["Date"].dt.dayofweek
-                )
-
-                selected_weekday = (
-                    extra_selected_date.dayofweek
-                )
-
-                # Same-weekday historical median per category.
-                extra_baseline = (
-                    extra_daily[
-                        extra_daily["Weekday"] == selected_weekday
-                    ]
-                    .groupby("Category")["Metric"]
-                    .median()
-                    .rename("Expected")
-                    .reset_index()
-                )
-
-                # Actual KPI value on the selected date.
-                extra_actual = extra_daily[
-                    extra_daily["Date"] == extra_selected_date
-                ][["Category", "Metric"]].rename(
-                    columns={"Metric": "Actual"}
-                )
-
-                extra_results = extra_actual.merge(
-                    extra_baseline,
-                    on="Category",
-                    how="outer",
-                )
-
-                extra_results["Deviation_Pct"] = (
-                    (
-                        extra_results["Actual"]
-                        - extra_results["Expected"]
-                    )
-                    / extra_results["Expected"].where(
-                        extra_results["Expected"] != 0
-                    )
-                    * 100
-                )
-
-                if extra_cfg["bad_direction"] == "higher":
-                    extra_results["Unfavourable"] = (
-                        extra_results["Deviation_Pct"] > 0
-                    )
-                else:
-                    extra_results["Unfavourable"] = (
-                        extra_results["Deviation_Pct"] < 0
-                    )
-
-                extra_results = extra_results.sort_values(
-                    "Actual", ascending=False, na_position="last"
-                )
-
-                st.markdown(
-                    f"**{category_kpi_extra} by Product Category "
-                    f"({extra_selected_date:%d %b %Y})**"
-                )
-
-                max_actual = extra_results["Actual"].max()
-
-                if pd.isna(max_actual) or max_actual <= 0:
-                    max_actual = 1
-
-                extra_rows_html = []
-
-                for _, row in extra_results.iterrows():
-                    category_name = html.escape(
-                        str(row["Category"])
-                    )
-
-                    actual = row["Actual"]
-                    expected = row["Expected"]
-                    deviation = row["Deviation_Pct"]
-
-                    actual_text = (
-                        extra_cfg["format"].format(actual)
-                        if pd.notna(actual)
-                        else "N/A"
-                    )
-
-                    expected_text = (
-                        extra_cfg["format"].format(expected)
-                        if pd.notna(expected)
-                        else "N/A"
-                    )
-
-                    bar_width = (
-                        max(0, min(100, actual / max_actual * 100))
-                        if pd.notna(actual)
-                        else 0
-                    )
-
-                    if pd.isna(deviation):
-                        deviation_text = "N/A"
-                        deviation_color = "#94A3B8"
-                    else:
-                        deviation_text = f"{deviation:+.1f}%"
-                        deviation_color = (
-                            "#E74C3C"
-                            if bool(row["Unfavourable"])
-                            else "#15966A"
-                        )
-
-                    extra_rows_html.append(
-                        f"""
-                        <tr>
-                          <td class="extra-cat-name">
-                            {category_name}
-                          </td>
-                          <td>
-                            <div class="extra-bar-line">
-                              <div class="extra-bar-track">
-                                <div class="extra-bar-fill"
-                                  style="width:{bar_width:.1f}%;
-                                         background:{deviation_color};">
-                                </div>
-                              </div>
-                              <span class="extra-value">
-                                {actual_text}
-                              </span>
-                            </div>
-                          </td>
-                          <td class="extra-deviation"
-                              style="color:{deviation_color};">
-                            {deviation_text}
-                          </td>
-                          <td class="extra-expected">
-                            {expected_text}
-                          </td>
-                        </tr>
-                        """
-                    )
-
-                st.markdown(
-                    """
-                    <style>
-                    .extra-category-table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        background: #FFFFFF;
-                        font-size: 12px;
-                    }
-                    .extra-category-table th {
-                        text-align: left;
-                        padding: 8px 6px;
-                        border-bottom: 1px solid #D9E1EA;
-                        background: #FFFFFF;
-                        color: #334155;
-                    }
-                    .extra-category-table td {
-                        padding: 7px 6px;
-                        border-bottom: 1px solid #E8EDF3;
-                        background: #FFFFFF;
-                        vertical-align: middle;
-                    }
-                    .extra-cat-name {
-                        width: 34%;
-                        color: #334155;
-                    }
-                    .extra-bar-line {
-                        display: flex;
-                        align-items: center;
-                        gap: 7px;
-                    }
-                    .extra-bar-track {
-                        flex: 1;
-                        min-width: 30px;
-                        height: 17px;
-                        background: #F1F5F9;
-                        overflow: hidden;
-                    }
-                    .extra-bar-fill {
-                        height: 17px;
-                    }
-                    .extra-value {
-                        min-width: 48px;
-                        text-align: right;
-                        font-weight: 600;
-                        color: #1E293B;
-                    }
-                    .extra-deviation {
-                        text-align: right;
-                        font-weight: 600;
-                        white-space: nowrap;
-                    }
-                    .extra-expected {
-                        text-align: right;
-                        white-space: nowrap;
-                        color: #64748B;
-                    }
-                    </style>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-                extra_table_html = (
-                    """
-                    <table class="extra-category-table">
-                    <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Actual</th>
-                      <th>Deviation vs Expected</th>
-                      <th>Expected</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    """
-                    + "".join(extra_rows_html)
-                    + """
-                    </tbody>
-                    </table>
-                    """
-                )
-
-                st.markdown(
-                    extra_table_html,
-                    unsafe_allow_html=True,
-                )
-
-                st.caption(
-                    "Expected = historical median for the same weekday "
-                    "and category. Red indicates an unfavourable change; "
-                    "green indicates a favourable change. These are "
-                    "investigation signals, not confirmed causes."
-                )
+        st.caption(
+            "Red indicates an unfavourable change; green indicates "
+            "a favourable change. Cancellation-rate increases are "
+            "unfavourable. Baselines use the historical median for "
+            "the same weekday. These are investigation signals, "
+            "not confirmed root causes."
+        )
 
 # ==========================================================
 # END OF ADDITIONAL CATEGORY KPI COMPARISON
-# SECTION 11: ACTIONABLE ALERT FEED CONTINUES BELOW
+# SECTION 11 CONTINUES BELOW
 # ==========================================================
 
 # ==================================================
