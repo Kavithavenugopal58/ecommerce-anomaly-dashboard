@@ -433,12 +433,16 @@ add_kpi_chart(
     "Cancellation_Rate_Is_Anomaly"
 )
 
+
 # ==================================================
 # 9. ALERT PRIORITY AND INTERACTIVE CATEGORY INVESTIGATION
 # ==================================================
+
 left, right = st.columns(2)
 
-# ----- LEFT: ALERT PRIORITY -----
+# --------------------------------------------------
+# LEFT: ALERT PRIORITY PIE CHART
+# --------------------------------------------------
 with left:
     st.subheader("Alerts by Priority")
 
@@ -464,10 +468,14 @@ with left:
             use_container_width=True
         )
     else:
-        st.info("No alerts match the selected date and priority filters.")
+        st.info(
+            "No alerts match the selected date and priority filters."
+        )
 
 
-# ----- RIGHT: INTERACTIVE CATEGORY INVESTIGATION -----
+# --------------------------------------------------
+# RIGHT: INTERACTIVE CATEGORY INVESTIGATION
+# --------------------------------------------------
 with right:
     st.subheader("Category Investigation")
 
@@ -484,8 +492,7 @@ with right:
 
     if not prod.empty and "Category" in prod.columns:
 
-        # Aggregate only the records matching the selected
-        # date range, geography and category filters.
+        # Aggregate product data for the selected date range
         category_data = (
             prod.groupby("Category", as_index=False)
             .agg(
@@ -493,30 +500,29 @@ with right:
                 Revenue_INR=("Revenue_INR", "sum")
             )
         )
-        
-st.write("Debug — selected range:", start_date, "to", end_date)
-st.write("Debug — filtered product revenue:", prod["Revenue_INR"].sum())
-st.write("Debug — category revenue total:", category_data["Revenue_INR"].sum())
 
-        # Calculate AOV from total revenue / total orders.
+        # Calculate average order value for each category
         category_data["Average Order Value (INR)"] = (
             category_data["Revenue_INR"]
             / category_data["Orders"].replace(0, float("nan"))
         )
 
-        # Calculate order-weighted cancellation rate by category.
+        # Calculate order-weighted cancellation rate
+        weighted_products = prod.copy()
+
+        weighted_products["Weighted_Cancellation"] = (
+            weighted_products["Cancellation_Rate_Pct"]
+            * weighted_products["Orders"]
+        )
+
         cancellation_numerator = (
-            prod.assign(
-                Weighted_Cancellation=(
-                    prod["Cancellation_Rate_Pct"] * prod["Orders"]
-                )
-            )
-            .groupby("Category")["Weighted_Cancellation"]
-            .sum()
+            weighted_products.groupby("Category")[
+                "Weighted_Cancellation"
+            ].sum()
         )
 
         category_orders = (
-            prod.groupby("Category")["Orders"].sum()
+            weighted_products.groupby("Category")["Orders"].sum()
         )
 
         category_data["Cancellation Rate (%)"] = (
@@ -526,7 +532,7 @@ st.write("Debug — category revenue total:", category_data["Revenue_INR"].sum()
             )
         )
 
-        # Map the dropdown choice to the appropriate data column.
+        # Select the metric for the chart
         metric_columns = {
             "Orders": "Orders",
             "Revenue (INR)": "Revenue_INR",
@@ -537,13 +543,12 @@ st.write("Debug — category revenue total:", category_data["Revenue_INR"].sum()
         value_column = metric_columns[category_metric]
 
         chart_data = (
-            category_data[
-                ["Category", value_column]
-            ]
+            category_data[["Category", value_column]]
             .dropna()
             .sort_values(value_column, ascending=False)
         )
 
+        # Display the category chart
         if not chart_data.empty:
             category_fig = px.bar(
                 chart_data,
@@ -576,16 +581,32 @@ st.write("Debug — category revenue total:", category_data["Revenue_INR"].sum()
             )
 
             st.caption(
-                f"Showing {category_metric.lower()} for "
-                f"{start_date} to {end_date}. "
-                f"Geography: {geo}; Category filter: {category}."
+                f"Date range: {start_date} to {end_date}. "
+                f"Geography filter: {geo}. "
+                f"Category filter: {category}."
             )
+
+            # Temporary diagnostic totals
+            # These should agree with the category aggregation.
+            if category_metric in ["Orders", "Revenue (INR)"]:
+                st.caption(
+                    "Validation total — selected product data: "
+                    + (
+                        f"{prod['Orders'].sum():,.0f} orders"
+                        if category_metric == "Orders"
+                        else f"₹{prod['Revenue_INR'].sum():,.2f} revenue"
+                    )
+                )
+
         else:
-            st.info("No values are available for this metric and filter selection.")
+            st.info(
+                "No values are available for this metric and filter selection."
+            )
 
     else:
-        st.info("No product data matches the selected filters.")
-
+        st.info(
+            "No product data matches the selected filters."
+        )
 
 # ==================================================
 # 10. PRODUCT-LEVEL INVESTIGATION — PIE CHART
