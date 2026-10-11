@@ -18,12 +18,12 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* PAGE: very light neutral canvas, visible only between dashboard panels */
+    /* PAGE: pure white background */
     .stApp,
     [data-testid="stAppViewContainer"],
     [data-testid="stMain"],
     [data-testid="stMainBlockContainer"] {
-        background: #EAF0F6 !important;
+        background: #FFFFFF !important;
     }
 
     .block-container {
@@ -31,13 +31,13 @@ st.markdown(
         padding: 0.8rem 1rem 1.5rem 1rem;
     }
 
-    /* FILTER PANEL: neutral grey, distinct from the white dashboard cards */
+    /* FILTER PANEL: white background, separated by a subtle border */
     [data-testid="stSidebar"] {
-        background: #F1F4F8 !important;
-        border-right: 2px solid #D3DCE7;
+        background: #FFFFFF !important;
+        border-right: 1px solid #D9DEE7;
     }
     [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-        background: #F1F4F8 !important;
+        background: #FFFFFF !important;
         padding: 0.8rem 0.65rem;
     }
     [data-testid="stSidebar"] h1,
@@ -72,7 +72,7 @@ st.markdown(
         gap: 0.55rem;
     }
 
-    /* DASHBOARD GRID: white independent panels separated by grey-blue gutters */
+    /* DASHBOARD GRID: white panels with borders only; no tinted backgrounds */
     [data-testid="stMain"] [data-testid="column"] {
         background: #FFFFFF !important;
         border: 1px solid #D4DEE9;
@@ -1609,6 +1609,8 @@ if not alert_data.empty:
 
         .alert-table th,
         .alert-table td {
+            background-color: #FFFFFF;
+            color: #24364B;
             border: 1px solid #d9dee7;
             padding: 9px;
             text-align: left;
@@ -1620,7 +1622,7 @@ if not alert_data.empty:
         }
 
         .alert-table th {
-            background-color: #eef2f7;
+            background-color: #FFFFFF;
             font-weight: 600;
         }
 
