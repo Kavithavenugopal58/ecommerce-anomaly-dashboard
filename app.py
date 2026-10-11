@@ -464,6 +464,45 @@ st.dataframe(
 )
 
 
+# TEMPORARY: OVERALL REVENUE BASELINE SUMMARY
+
+baseline_check = det.copy()
+
+baseline_check["Date"] = pd.to_datetime(
+    baseline_check["Date"], errors="coerce"
+)
+
+baseline_check["Revenue_Gap_INR"] = (
+    baseline_check["Total_Revenue_INR_Expected"]
+    - baseline_check["Total_Revenue_INR"]
+)
+
+baseline_check["Actual_to_Expected_Pct"] = (
+    baseline_check["Total_Revenue_INR"]
+    / baseline_check["Total_Revenue_INR_Expected"]
+    * 100
+)
+
+st.subheader("Overall Revenue Baseline Summary")
+
+st.metric(
+    "Average Actual / Expected Revenue",
+    f"{baseline_check['Actual_to_Expected_Pct'].mean():.1f}%"
+)
+
+st.dataframe(
+    baseline_check[
+        [
+            "Date",
+            "Total_Revenue_INR",
+            "Total_Revenue_INR_Expected",
+            "Revenue_Gap_INR",
+            "Actual_to_Expected_Pct"
+        ]
+    ].head(10),
+    use_container_width=True
+)
+
 
 
             
