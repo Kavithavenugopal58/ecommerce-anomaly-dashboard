@@ -493,6 +493,10 @@ with right:
                 Revenue_INR=("Revenue_INR", "sum")
             )
         )
+        
+st.write("Debug — selected range:", start_date, "to", end_date)
+st.write("Debug — filtered product revenue:", prod["Revenue_INR"].sum())
+st.write("Debug — category revenue total:", category_data["Revenue_INR"].sum())
 
         # Calculate AOV from total revenue / total orders.
         category_data["Average Order Value (INR)"] = (
