@@ -414,6 +414,7 @@ with kpi4:
             
 
 
+
 # ==================================================
 # 8. INTERACTIVE KPI TREND + ALERTS BY PRIORITY
 # ==================================================
@@ -421,7 +422,7 @@ with kpi4:
 trend_col, priority_col = st.columns([2.2, 1])
 
 # --------------------------------------------------
-# LEFT: KPI TREND WITH CATEGORY FILTER
+# LEFT: KPI TREND
 # --------------------------------------------------
 with trend_col:
     st.subheader("KPI Trend with Anomalies")
@@ -480,12 +481,11 @@ with trend_col:
 
         actual_col, expected_col, flag_col = trend_columns[kpi_name]
 
+        fig = go.Figure()
+
         if actual_col not in trend.columns:
             st.warning(f"Missing KPI column: {actual_col}")
-
         else:
-            fig = go.Figure()
-
             fig.add_trace(go.Scatter(
                 x=trend["Date"],
                 y=trend[actual_col],
@@ -537,7 +537,7 @@ with trend_col:
                     ))
 
     # --------------------------------------------------
-    # CATEGORY TREND: CALCULATE CATEGORY-SPECIFIC BASELINE
+    # CATEGORY TREND: CATEGORY-SPECIFIC BASELINE
     # --------------------------------------------------
     else:
         category_history = prod[
@@ -548,9 +548,11 @@ with trend_col:
             category_history["Date"]
         )
 
-        category_history = category_history.dropna(subset=["Date"])
+        category_history = category_history.dropna(
+            subset=["Date"]
+        )
 
-        # Build daily category totals from product-level data.
+        # Aggregate product-level records by date.
         daily = (
             category_history.groupby("Date", as_index=False)
             .agg(
@@ -559,13 +561,12 @@ with trend_col:
             )
         )
 
-        # Weighted AOV per date.
         daily["Weighted AOV (INR)"] = (
             daily["Revenue_INR"]
             / daily["Orders"].replace(0, float("nan"))
         )
 
-        # Order-weighted cancellation rate per date.
+        # Order-weighted cancellation rate.
         category_history["Weighted_Cancellation"] = (
             category_history["Cancellation_Rate_Pct"]
             * category_history["Orders"]
@@ -575,17 +576,31 @@ with trend_col:
             "Weighted_Cancellation"
         ].sum()
 
-        order_sum = category_history.groupby("Date")["Orders"].sum()
+        orders_by_date = category_history.groupby("Date")[
+            "Orders"
+        ].sum()
 
         daily["Cancellation Rate (%)"] = (
             daily["Date"].map(cancellation_sum)
-            / daily["Date"].map(order_sum).replace(0, float("nan"))
+            / daily["Date"].map(orders_by_date).replace(
+                0, float("nan")
+            )
         )
 
         daily = daily.sort_values("Date").copy()
         daily["Day_of_Week"] = daily["Date"].dt.dayofweek
 
-        # Use the selected date range for the chart.
+        # Map dropdown labels to the real dataframe column names.
+        metric_columns = {
+            "Orders": "Orders",
+            "Revenue (INR)": "Revenue_INR",
+            "Weighted AOV (INR)": "Weighted AOV (INR)",
+            "Cancellation Rate (%)": "Cancellation Rate (%)"
+        }
+
+        metric_col = metric_columns[kpi_name]
+
+        # Filter displayed data to the selected date range.
         range_start = pd.to_datetime(start_date).normalize()
         range_end = pd.to_datetime(end_date).normalize()
 
@@ -594,10 +609,8 @@ with trend_col:
             & (daily["Date"] < range_end + pd.Timedelta(days=1))
         ].copy()
 
-        metric_col = kpi_name
-
-        # Use ALL available category history to calculate baselines.
-        category_history_daily = (
+        # Prepare all historical daily values for the selected category.
+        history = (
             category_history.groupby("Date", as_index=False)
             .agg(
                 Orders=("Orders", "sum"),
@@ -605,85 +618,79 @@ with trend_col:
             )
         )
 
-        category_history_daily["Weighted AOV (INR)"] = (
-            category_history_daily["Revenue_INR"]
-            / category_history_daily["Orders"].replace(
+        history["Weighted AOV (INR)"] = (
+            history["Revenue_INR"]
+            / history["Orders"].replace(0, float("nan"))
+        )
+
+        history["Weighted_Cancellation"] = (
+            history["Date"].map(cancellation_sum)
+        )
+
+        history["Orders_For_Cancellation"] = (
+            history["Date"].map(orders_by_date)
+        )
+
+        history["Cancellation Rate (%)"] = (
+            history["Weighted_Cancellation"]
+            / history["Orders_For_Cancellation"].replace(
                 0, float("nan")
             )
         )
 
-        history_cancellation = category_history.groupby("Date")[
-            "Weighted_Cancellation"
-        ].sum()
+        history["Day_of_Week"] = history["Date"].dt.dayofweek
 
-        history_orders = category_history.groupby("Date")["Orders"].sum()
+        # Weekday median baseline; overall median is the fallback.
+        overall_baseline = history[metric_col].median()
 
-        category_history_daily["Cancellation Rate (%)"] = (
-            category_history_daily["Date"].map(history_cancellation)
-            / category_history_daily["Date"].map(
-                history_orders
-            ).replace(0, float("nan"))
-        )
-
-        category_history_daily["Day_of_Week"] = (
-            category_history_daily["Date"].dt.dayofweek
-        )
-
-        # First choice: median for the same weekday.
         weekday_baseline = (
-            category_history_daily.groupby("Day_of_Week")[metric_col]
+            history.groupby("Day_of_Week")[metric_col]
             .median()
         )
 
-        # Fallback: overall category historical median.
-        overall_baseline = category_history_daily[metric_col].median()
-
-        daily["Expected"] = daily["Day_of_Week"].map(weekday_baseline)
-
-        daily["Expected"] = daily["Expected"].fillna(overall_baseline)
-
-        # Calculate absolute deviation from expected.
-        category_history_daily["Expected"] = (
-            category_history_daily["Day_of_Week"].map(weekday_baseline)
+        daily["Expected"] = daily["Day_of_Week"].map(
+            weekday_baseline
         )
 
-        category_history_daily["Expected"] = (
-            category_history_daily["Expected"].fillna(overall_baseline)
+        daily["Expected"] = daily["Expected"].fillna(
+            overall_baseline
         )
 
-        category_history_daily["Absolute_Deviation"] = (
-            category_history_daily[metric_col]
-            - category_history_daily["Expected"]
+        # Calculate historical deviations from expected values.
+        history["Expected"] = history["Day_of_Week"].map(
+            weekday_baseline
+        )
+
+        history["Expected"] = history["Expected"].fillna(
+            overall_baseline
+        )
+
+        history["Absolute_Deviation"] = (
+            history[metric_col] - history["Expected"]
         ).abs()
 
-        # Weekday MAD: median absolute deviation from the weekday baseline.
         weekday_mad = (
-            category_history_daily.groupby("Day_of_Week")[
-                "Absolute_Deviation"
-            ].median()
+            history.groupby("Day_of_Week")["Absolute_Deviation"]
+            .median()
         )
 
+        overall_mad = history["Absolute_Deviation"].median()
+
         daily["MAD"] = daily["Day_of_Week"].map(weekday_mad)
-
-        # Fallback MAD: overall median absolute deviation.
-        overall_mad = category_history_daily[
-            "Absolute_Deviation"
-        ].median()
-
         daily["MAD"] = daily["MAD"].fillna(overall_mad)
 
-        # A zero MAD is valid for constant data but cannot be used
-        # as a multiplier threshold. Use a small tolerance instead.
         daily["Deviation"] = (
             daily[metric_col] - daily["Expected"]
         ).abs()
 
+        # Flag deviations beyond 3 x MAD.
         daily["Is_Anomaly"] = (
-            daily["Deviation"] > (3 * daily["MAD"])
-        ) & daily["MAD"].notna() & daily["Expected"].notna()
+            (daily["Deviation"] > 3 * daily["MAD"])
+            & daily["MAD"].notna()
+            & daily["Expected"].notna()
+        )
 
-        # If MAD is zero, flag only deviations larger than a small,
-        # metric-relative tolerance.
+        # Zero-MAD fallback: use 1% of the historical metric scale.
         zero_mad = daily["MAD"].fillna(0) == 0
 
         metric_scale = max(
@@ -695,12 +702,14 @@ with trend_col:
         tolerance = metric_scale * 0.01
 
         daily.loc[zero_mad, "Is_Anomaly"] = (
-            daily.loc[zero_mad, "Deviation"] > tolerance
-        ) & daily.loc[zero_mad, "Expected"].notna()
+            (daily.loc[zero_mad, "Deviation"] > tolerance)
+            & daily.loc[zero_mad, "Expected"].notna()
+        )
 
         fig = go.Figure()
 
         if not daily.empty:
+            # Actual category KPI
             fig.add_trace(go.Scatter(
                 x=daily["Date"],
                 y=daily[metric_col],
@@ -715,7 +724,7 @@ with trend_col:
                 )
             ))
 
-            # Expected baseline is displayed even when it is flat.
+            # Expected category baseline
             if daily["Expected"].notna().any():
                 fig.add_trace(go.Scatter(
                     x=daily["Date"],
@@ -734,6 +743,7 @@ with trend_col:
                     )
                 ))
 
+            # Category-specific exploratory anomalies
             anomaly_data = daily[
                 daily["Is_Anomaly"].fillna(False)
             ].dropna(subset=[metric_col])
@@ -757,18 +767,17 @@ with trend_col:
 
             st.caption(
                 "Category baseline uses historical weekday medians, "
-                "with an overall-median fallback. Red markers use a "
-                "category-specific MAD rule and are exploratory flags, "
-                "not the original detector's alerts."
+                "with an overall-median fallback. Category anomaly "
+                "markers are exploratory and are not the original "
+                "daily detector's alerts."
             )
         else:
-            st.warning(
-                "No daily records exist for this category in the selected "
-                "date range."
+            st.info(
+                "No records exist for this category in the selected date range."
             )
 
     # --------------------------------------------------
-    # DISPLAY TREND CHART
+    # DISPLAY KPI TREND
     # --------------------------------------------------
     if "fig" in locals():
         fig.update_layout(
@@ -807,8 +816,7 @@ with priority_col:
 
     priority_source = alert_data.copy()
 
-    # Preserve previous filter behavior:
-    # Geography/Category filters select dates with matching products.
+    # Preserve the previous Geography and Category date filtering.
     if not priority_source.empty and not prod.empty:
         matching_products = prod.copy()
 
