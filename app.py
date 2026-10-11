@@ -18,11 +18,13 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* PAGE: pure white background */
+    /* Pure white canvas: no coloured page or panel fills */
     .stApp,
     [data-testid="stAppViewContainer"],
     [data-testid="stMain"],
-    [data-testid="stMainBlockContainer"] {
+    [data-testid="stMainBlockContainer"],
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
         background: #FFFFFF !important;
     }
 
@@ -31,13 +33,11 @@ st.markdown(
         padding: 0.8rem 1rem 1.5rem 1rem;
     }
 
-    /* FILTER PANEL: white background, separated by a subtle border */
+    /* Sidebar filters: white controls with visible outlines */
     [data-testid="stSidebar"] {
-        background: #FFFFFF !important;
-        border-right: 1px solid #D9DEE7;
+        border-right: 1px solid #D5DCE5 !important;
     }
     [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-        background: #FFFFFF !important;
         padding: 0.8rem 0.65rem;
     }
     [data-testid="stSidebar"] h1,
@@ -48,7 +48,6 @@ st.markdown(
         color: #26384D !important;
         font-weight: 600;
     }
-    /* White filter controls with visible grey outlines */
     [data-testid="stSidebar"] [data-baseweb="select"] > div,
     [data-testid="stSidebar"] [data-baseweb="input"] > div,
     [data-testid="stSidebar"] [data-testid="stDateInput"] input,
@@ -56,13 +55,13 @@ st.markdown(
     [data-testid="stSidebar"] textarea {
         background: #FFFFFF !important;
         color: #24364B !important;
-        border: 1px solid #B9C6D5 !important;
-        border-radius: 7px !important;
+        border: 1px solid #BFC8D3 !important;
+        border-radius: 5px !important;
         box-shadow: none !important;
     }
     [data-testid="stSidebar"] [data-baseweb="select"]:focus-within,
     [data-testid="stSidebar"] [data-baseweb="input"]:focus-within {
-        outline: 2px solid #6C9BCB !important;
+        outline: 1px solid #8B98A8 !important;
         outline-offset: 1px;
     }
     [data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
@@ -72,41 +71,41 @@ st.markdown(
         gap: 0.55rem;
     }
 
-    /* DASHBOARD GRID: white panels with borders only; no tinted backgrounds */
+    /* GRID: white panels separated by thin, visible grey borders */
     [data-testid="stMain"] [data-testid="column"] {
         background: #FFFFFF !important;
-        border: 1px solid #D4DEE9;
-        border-radius: 10px;
+        border: 1px solid #D5DCE5 !important;
+        border-radius: 6px !important;
         padding: 0.55rem 0.65rem 0.65rem 0.65rem;
-        box-shadow: 0 2px 5px rgba(31, 52, 75, 0.055);
+        box-shadow: none !important;
         min-width: 0;
     }
     [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
-        gap: 0.75rem;
+        gap: 0.65rem !important;
         align-items: stretch;
     }
     [data-testid="stMain"] [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] {
         margin-bottom: 0.6rem;
     }
 
-    /* Charts and tables stay white inside their panels */
+    /* Chart/table surfaces stay white; borders provide the separation */
     [data-testid="stPlotlyChart"],
     [data-testid="stDataFrame"],
     [data-testid="stTable"] {
         background: #FFFFFF !important;
-        border-radius: 7px;
+        border: 1px solid #E0E4EA;
+        border-radius: 4px;
         overflow: hidden;
     }
     [data-testid="stPlotlyChart"] > div {
         background: #FFFFFF !important;
     }
 
-    /* Readable typography and quiet separators */
     h1, h2, h3, h4 {
-        color: #17324F;
+        color: #26384D;
     }
     hr {
-        border-color: #D6DFE9;
+        border-color: #D5DCE5;
     }
     </style>
     """,
@@ -409,13 +408,13 @@ st.markdown(
     <style>
     .kpi-card {
         background: #FFFFFF;
-        border: 1px solid #D5E7F8;
+        border: 1px solid #D5DCE5;
         border-radius: 10px;
         padding: 15px 15px;
         min-height: 112px;
         color: #142B4D;
-        box-shadow: 0 2px 8px rgba(36, 91, 134, 0.06);
-        border-top: 4px solid #3B82C4;
+        box-shadow: none;
+        border-top: 3px solid #AEB8C5;
     }
     [data-testid="stMain"] [data-testid="column"] .kpi-card {
         background: #FFFFFF;
@@ -1609,8 +1608,6 @@ if not alert_data.empty:
 
         .alert-table th,
         .alert-table td {
-            background-color: #FFFFFF;
-            color: #24364B;
             border: 1px solid #d9dee7;
             padding: 9px;
             text-align: left;
