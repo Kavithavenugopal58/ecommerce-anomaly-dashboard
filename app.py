@@ -301,14 +301,19 @@ st.markdown(
         ">
             E-Commerce Anomaly Intelligence
         </h1>
-        <p style="
-            margin: 10px 0 0 0;
-            color: #FFFFFF !important;
-            font-size: 15px;
-            font-weight: 500;
-        ">
-            Sales monitoring · Root-cause investigation · Action ownership
-        </p>
+        
+<p style="
+    margin: 12px 0 0 0;
+    color: #FFFFFF !important;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1.5;
+    opacity: 1;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+">
+    Sales monitoring · Root-cause investigation · Action ownership
+</p>
+
     </div>
     """,
     unsafe_allow_html=True
