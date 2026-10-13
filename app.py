@@ -278,15 +278,35 @@ def build_narrative(row):
 # ==================================================
 # 4. HEADER
 # ==================================================
+
+# ==================================================
+# 4. HEADER
+# ==================================================
+
 st.markdown(
     """
     <div style="
         background: linear-gradient(110deg, #10284A, #245B86);
         padding: 24px;
         border-radius: 12px;
-        color: white;">
-        <h1 style="margin:0;">E-Commerce Anomaly Intelligence</h1>
-        <p style="margin:8px 0 0 0;">
+        color: #FFFFFF !important;
+        margin-bottom: 8px;
+    ">
+        <h1 style="
+            margin: 0;
+            color: #FFFFFF !important;
+            font-size: 32px;
+            font-weight: 800;
+            line-height: 1.25;
+        ">
+            E-Commerce Anomaly Intelligence
+        </h1>
+        <p style="
+            margin: 10px 0 0 0;
+            color: #FFFFFF !important;
+            font-size: 15px;
+            font-weight: 500;
+        ">
             Sales monitoring · Root-cause investigation · Action ownership
         </p>
     </div>
