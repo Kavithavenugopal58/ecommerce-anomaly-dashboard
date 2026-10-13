@@ -1773,19 +1773,33 @@ else:
                     ),
                 )
 
+                
                 product_fig.update_layout(
                     paper_bgcolor="#FFFFFF",
                     plot_bgcolor="#FFFFFF",
-                    height=340,
-                    margin=dict(l=5, r=5, t=40, b=5),
+                    height=360,
+                    autosize=True,
+                    margin=dict(l=12, r=12, t=45, b=55),
+                    font=dict(
+                        family="Arial, sans-serif",
+                        size=13,
+                        color="#263238"
+                    ),
+                    title=dict(
+                        text=f"{product_metric} by Product",
+                        font=dict(size=17, color="#172B4D"),
+                        x=0.02,
+                        xanchor="left"
+                    ),
                     legend=dict(
                         orientation="h",
                         yanchor="top",
-                        y=-0.05,
+                        y=-0.08,
                         x=0,
-                        font=dict(size=9),
-                    ),
+                        font=dict(size=10, color="#263238")
+                    )
                 )
+
 
                 st.plotly_chart(
                     product_fig,
