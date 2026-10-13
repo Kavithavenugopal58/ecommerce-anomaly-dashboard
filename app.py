@@ -277,58 +277,59 @@ def build_narrative(row):
 
 
 
+
 # ==================================================
 # 4. HEADER
 # ==================================================
 
+# Header title
 st.markdown(
     """
     <div style="
         background: linear-gradient(110deg, #10284A, #245B86);
-        padding: 22px 24px;
-        border-radius: 12px;
-        margin: 0 0 12px 0;
-        box-sizing: border-box;
+        padding: 22px 24px 10px 24px;
+        border-radius: 12px 12px 0 0;
+        margin: 0;
     ">
         <h1 style="
-            margin: 0 0 12px 0;
+            margin: 0;
             padding: 0;
-            color: #FFFFFF !important;
+            color: #FFFFFF;
             font-family: Arial, sans-serif;
             font-size: 32px;
             font-weight: 800;
             line-height: 1.3;
-        ">
-            E-Commerce Anomaly Intelligence
-        </h1>
-
-        <p style="
-            margin: 0;
-            padding: 0;
-            color: #FFFFFF !important;
-            font-family: Arial, sans-serif;
-            font-size: 16px;
-            font-weight: 600;
-            line-height: 1.5;
-        ">
-            Sales monitoring | Root-cause investigation | Action ownership
-        </p>
+        ">E-Commerce Anomaly Intelligence</h1>
     </div>
     """,
     unsafe_allow_html=True
 )
 
-# Historical-data note — placed below the header
+# Subtitle — use native Streamlit text, not HTML
+st.markdown(
+    """
+    <div style="
+        background: #245B86;
+        padding: 10px 24px 18px 24px;
+        border-radius: 0 0 12px 12px;
+        margin: 0 0 12px 0;
+    ">
+        <span style="
+            color: #FFFFFF;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+        ">Sales monitoring | Root-cause investigation | Action ownership</span>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# Historical-data note below the header
 st.caption(
     "Historical-data monitoring prototype. Anomaly alerts are signals "
     "for investigation, not proof of root cause."
 )
-
-# Add a little breathing room before the next dashboard section
-st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
-
-
-
 
 # ==================================================
 # 5. FILTERS
