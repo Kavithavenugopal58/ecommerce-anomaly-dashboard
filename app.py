@@ -275,14 +275,6 @@ def build_narrative(row):
 
     return affected_text, hypothesis, confidence, evidence
 
-# ==================================================
-# 4. HEADER
-# ==================================================
-
-# ==================================================
-# 4. HEADER
-# ==================================================
-
 
 # ==================================================
 # 4. HEADER
@@ -291,35 +283,39 @@ def build_narrative(row):
 st.markdown(
     """
     <div style="
-        background: linear-gradient(110deg, #10284A 0%, #245B86 100%);
+        background: linear-gradient(110deg, #10284A, #245B86);
         padding: 22px 24px;
         border-radius: 12px;
         margin-bottom: 8px;
-        box-sizing: border-box;
     ">
         <h1 style="
             margin: 0;
-            padding: 0;
-            color: #FFFFFF;
-            font-family: Arial, sans-serif;
+            color: white !important;
             font-size: 32px;
             font-weight: 800;
-            line-height: 1.25;
-        ">
-            E-Commerce Anomaly Intelligence
-        </h1>
+            line-height: 1.3;
+        ">E-Commerce Anomaly Intelligence</h1>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
+# Subtitle displayed separately using native Streamlit styling
+st.markdown(
+    """
+    <div style="
+        background: #245B86;
+        padding: 0 24px 16px 24px;
+        margin-top: -8px;
+        border-radius: 0 0 12px 12px;
+    ">
         <p style="
-            margin: 12px 0 0 0;
-            padding: 0;
-            color: #FFFFFF;
-            font-family: Arial, sans-serif;
+            margin: 0;
+            color: white !important;
             font-size: 16px;
             font-weight: 600;
             line-height: 1.5;
-        ">
-            Sales monitoring &bull; Root-cause investigation &bull; Action ownership
-        </p>
+        ">Sales monitoring | Root-cause investigation | Action ownership</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -329,6 +325,8 @@ st.caption(
     "Historical-data monitoring prototype. Anomaly alerts are signals "
     "for investigation, not proof of root cause."
 )
+
+
 
 
 # ==================================================
