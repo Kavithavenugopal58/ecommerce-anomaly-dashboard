@@ -278,58 +278,58 @@ def build_narrative(row):
 
 
 
+
 # ==================================================
 # 4. HEADER
 # ==================================================
 
-# Header title
 st.markdown(
     """
     <div style="
         background: linear-gradient(110deg, #10284A, #245B86);
-        padding: 22px 24px 10px 24px;
-        border-radius: 12px 12px 0 0;
-        margin: 0;
+        padding: 24px 24px 20px 24px;
+        border-radius: 12px;
+        margin: 0 0 12px 0;
+        min-height: 120px;
+        box-sizing: border-box;
+        overflow: visible;
     ">
-        <h1 style="
-            margin: 0;
-            padding: 0;
-            color: #FFFFFF;
+        <div style="
+            color: #FFFFFF !important;
             font-family: Arial, sans-serif;
             font-size: 32px;
             font-weight: 800;
-            line-height: 1.3;
-        ">E-Commerce Anomaly Intelligence</h1>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+            line-height: 1.5;
+            padding: 0;
+            margin: 0 0 8px 0;
+            display: block;
+            overflow: visible;
+        ">
+            E-Commerce Anomaly Intelligence
+        </div>
 
-# Subtitle — use native Streamlit text, not HTML
-st.markdown(
-    """
-    <div style="
-        background: #245B86;
-        padding: 10px 24px 18px 24px;
-        border-radius: 0 0 12px 12px;
-        margin: 0 0 12px 0;
-    ">
-        <span style="
-            color: #FFFFFF;
+        <div style="
+            color: #FFFFFF !important;
             font-family: Arial, sans-serif;
             font-size: 16px;
             font-weight: 600;
-        ">Sales monitoring | Root-cause investigation | Action ownership</span>
+            line-height: 1.5;
+            padding: 0;
+            margin: 0;
+            display: block;
+        ">
+            Sales monitoring | Root-cause investigation | Action ownership
+        </div>
     </div>
     """,
     unsafe_allow_html=True
 )
 
-# Historical-data note below the header
 st.caption(
     "Historical-data monitoring prototype. Anomaly alerts are signals "
     "for investigation, not proof of root cause."
 )
+
 
 # ==================================================
 # 5. FILTERS
