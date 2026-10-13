@@ -40,14 +40,21 @@ st.markdown(
     }
 
     /* Dark, readable headings and body text */
-    h1, h2, h3, h4,
-    [data-testid="stMarkdownContainer"] p,
-    [data-testid="stCaptionContainer"],
-    [data-testid="stWidgetLabel"],
-    label {
-        color: #263238 !important;
-        opacity: 1 !important;
-    }
+    
+/* Dark, readable text across the dashboard */
+h1, h2, h3, h4,
+[data-testid="stMarkdownContainer"] p,
+[data-testid="stCaptionContainer"],
+[data-testid="stWidgetLabel"],
+label {
+    color: #263238 !important;
+    opacity: 1 !important;
+}
+
+/* Restore white text specifically inside the blue header */
+[data-testid="stMarkdownContainer"] h1 {
+    color: #FFFFFF !important;
+}
 
     h1, h2, h3, h4 {
         font-weight: 700 !important;
