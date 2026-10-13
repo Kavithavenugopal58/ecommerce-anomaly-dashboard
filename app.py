@@ -277,38 +277,53 @@ def build_narrative(row):
 
 
 
+
 # ==================================================
 # 4. HEADER
 # ==================================================
 
 st.markdown(
     """
-    <div style="
-        background-color: #17365D;
-        padding: 24px;
-        border-radius: 10px;
-        margin-bottom: 12px;
-    ">
-        <h1 style="
-            color: #FFFFFF;
-            font-size: 32px;
-            font-weight: bold;
-            margin: 0;
-            padding: 0;
-            line-height: 1.4;
-        ">
+    <style>
+    .ecom-header {
+        background: linear-gradient(110deg, #17365D, #245B86);
+        padding: 30px 26px 24px 26px;
+        border-radius: 12px;
+        margin: 8px 0 12px 0;
+        box-sizing: border-box;
+        overflow: visible;
+    }
+
+    .ecom-header-title {
+        color: #FFFFFF !important;
+        font-family: Arial, sans-serif !important;
+        font-size: 32px !important;
+        font-weight: 800 !important;
+        line-height: 1.4 !important;
+        margin: 0 0 12px 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+
+    .ecom-header-subtitle {
+        color: #FFFFFF !important;
+        font-family: Arial, sans-serif !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        line-height: 1.5 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
+    }
+    </style>
+
+    <div class="ecom-header">
+        <div class="ecom-header-title">
             E-Commerce Anomaly Intelligence
-        </h1>
-        <p style="
-            color: #FFFFFF;
-            font-size: 16px;
-            font-weight: bold;
-            margin: 12px 0 0 0;
-            padding: 0;
-            line-height: 1.5;
-        ">
+        </div>
+        <div class="ecom-header-subtitle">
             Sales monitoring | Root-cause investigation | Action ownership
-        </p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True
