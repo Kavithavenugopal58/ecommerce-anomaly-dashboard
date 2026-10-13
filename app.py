@@ -1542,21 +1542,49 @@ else:
                     line_color="#64748B",
                 )
 
+            
                 category_fig.update_layout(
                     paper_bgcolor="#FFFFFF",
                     plot_bgcolor="#FFFFFF",
-                    height=340,
-                    margin=dict(l=5, r=5, t=20, b=5),
+                    height=360,
+                    autosize=True,
+                    margin=dict(l=12, r=12, t=35, b=35),
+                    font=dict(
+                        family="Arial, sans-serif",
+                        size=13,
+                        color="#263238"
+                    ),
+                    title_font=dict(
+                        size=17,
+                        color="#172B4D"
+                    ),
                     legend=dict(
                         orientation="h",
                         yanchor="bottom",
                         y=1.02,
                         x=0,
-                        font=dict(size=9),
+                        font=dict(
+                            size=11,
+                            color="#263238"
+                        )
                     ),
-                    xaxis=dict(automargin=True),
-                    yaxis=dict(title=None, automargin=True),
+                    xaxis=dict(
+                        title=dict(
+                            text="Unfavourable difference",
+                            font=dict(size=12, color="#263238")
+                        ),
+                        tickfont=dict(size=11, color="#344054"),
+                        gridcolor="#E2E8F0",
+                        zerolinecolor="#94A3B8",
+                        automargin=True
+                    ),
+                    yaxis=dict(
+                        title=None,
+                        tickfont=dict(size=11, color="#344054"),
+                        automargin=True
+                    )
                 )
+
 
                 st.plotly_chart(
                     category_fig,
