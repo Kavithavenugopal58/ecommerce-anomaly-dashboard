@@ -283,37 +283,43 @@ def build_narrative(row):
 # 4. HEADER
 # ==================================================
 
+
+# ==================================================
+# 4. HEADER
+# ==================================================
+
 st.markdown(
     """
     <div style="
-        background: linear-gradient(110deg, #10284A, #245B86);
-        padding: 24px;
+        background: linear-gradient(110deg, #10284A 0%, #245B86 100%);
+        padding: 22px 24px;
         border-radius: 12px;
-        color: #FFFFFF !important;
         margin-bottom: 8px;
+        box-sizing: border-box;
     ">
         <h1 style="
             margin: 0;
-            color: #FFFFFF !important;
+            padding: 0;
+            color: #FFFFFF;
+            font-family: Arial, sans-serif;
             font-size: 32px;
             font-weight: 800;
             line-height: 1.25;
         ">
             E-Commerce Anomaly Intelligence
         </h1>
-        
-<p style="
-    margin: 12px 0 0 0;
-    color: #FFFFFF !important;
-    font-size: 16px;
-    font-weight: 700;
-    line-height: 1.5;
-    opacity: 1;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.35);
-">
-    Sales monitoring · Root-cause investigation · Action ownership
-</p>
 
+        <p style="
+            margin: 12px 0 0 0;
+            padding: 0;
+            color: #FFFFFF;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            line-height: 1.5;
+        ">
+            Sales monitoring &bull; Root-cause investigation &bull; Action ownership
+        </p>
     </div>
     """,
     unsafe_allow_html=True
@@ -323,6 +329,7 @@ st.caption(
     "Historical-data monitoring prototype. Anomaly alerts are signals "
     "for investigation, not proof of root cause."
 )
+
 
 # ==================================================
 # 5. FILTERS
