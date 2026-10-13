@@ -276,6 +276,7 @@ def build_narrative(row):
     return affected_text, hypothesis, confidence, evidence
 
 
+
 # ==================================================
 # 4. HEADER
 # ==================================================
@@ -286,45 +287,45 @@ st.markdown(
         background: linear-gradient(110deg, #10284A, #245B86);
         padding: 22px 24px;
         border-radius: 12px;
-        margin-bottom: 8px;
+        margin: 0 0 12px 0;
+        box-sizing: border-box;
     ">
         <h1 style="
-            margin: 0;
-            color: white !important;
+            margin: 0 0 12px 0;
+            padding: 0;
+            color: #FFFFFF !important;
+            font-family: Arial, sans-serif;
             font-size: 32px;
             font-weight: 800;
             line-height: 1.3;
-        ">E-Commerce Anomaly Intelligence</h1>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+        ">
+            E-Commerce Anomaly Intelligence
+        </h1>
 
-# Subtitle displayed separately using native Streamlit styling
-st.markdown(
-    """
-    <div style="
-        background: #245B86;
-        padding: 0 24px 16px 24px;
-        margin-top: -8px;
-        border-radius: 0 0 12px 12px;
-    ">
         <p style="
             margin: 0;
-            color: white !important;
+            padding: 0;
+            color: #FFFFFF !important;
+            font-family: Arial, sans-serif;
             font-size: 16px;
             font-weight: 600;
             line-height: 1.5;
-        ">Sales monitoring | Root-cause investigation | Action ownership</p>
+        ">
+            Sales monitoring | Root-cause investigation | Action ownership
+        </p>
     </div>
     """,
     unsafe_allow_html=True
 )
 
+# Historical-data note — placed below the header
 st.caption(
     "Historical-data monitoring prototype. Anomaly alerts are signals "
     "for investigation, not proof of root cause."
 )
+
+# Add a little breathing room before the next dashboard section
+st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
 
 
 
