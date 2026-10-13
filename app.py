@@ -15,10 +15,15 @@ st.set_page_config(
     layout="wide"
 )
 
+
+# ==================================================
+# 1A. DASHBOARD STYLING — HIGH CONTRAST AND CLEAN SPACING
+# ==================================================
+
 st.markdown(
     """
     <style>
-    /* Pure white canvas: no coloured page or panel fills */
+    /* White dashboard background */
     .stApp,
     [data-testid="stAppViewContainer"],
     [data-testid="stMain"],
@@ -26,86 +31,88 @@ st.markdown(
     [data-testid="stSidebar"],
     [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
         background: #FFFFFF !important;
+        color: #263238 !important;
     }
 
     .block-container {
         max-width: 100%;
-        padding: 0.8rem 1rem 1.5rem 1rem;
+        padding: 0.8rem 1rem 1.2rem 1rem;
     }
 
-    /* Sidebar filters: white controls with visible outlines */
+    /* Dark, readable headings and body text */
+    h1, h2, h3, h4,
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stCaptionContainer"],
+    [data-testid="stWidgetLabel"],
+    label {
+        color: #263238 !important;
+        opacity: 1 !important;
+    }
+
+    h1, h2, h3, h4 {
+        font-weight: 700 !important;
+    }
+
+    [data-testid="stCaptionContainer"] {
+        font-size: 0.85rem !important;
+    }
+
+    /* Sidebar */
     [data-testid="stSidebar"] {
-        border-right: 1px solid #D5DCE5 !important;
+        border-right: 1px solid #CBD5E1 !important;
     }
-    [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
-        padding: 0.8rem 0.65rem;
-    }
+
     [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3,
     [data-testid="stSidebar"] label,
     [data-testid="stSidebar"] p {
-        color: #26384D !important;
-        font-weight: 600;
+        color: #263238 !important;
+        font-weight: 600 !important;
     }
+
     [data-testid="stSidebar"] [data-baseweb="select"] > div,
-    [data-testid="stSidebar"] [data-baseweb="input"] > div,
-    [data-testid="stSidebar"] [data-testid="stDateInput"] input,
     [data-testid="stSidebar"] input,
     [data-testid="stSidebar"] textarea {
         background: #FFFFFF !important;
-        color: #24364B !important;
-        border: 1px solid #BFC8D3 !important;
-        border-radius: 5px !important;
-        box-shadow: none !important;
-    }
-    [data-testid="stSidebar"] [data-baseweb="select"]:focus-within,
-    [data-testid="stSidebar"] [data-baseweb="input"]:focus-within {
-        outline: 1px solid #8B98A8 !important;
-        outline-offset: 1px;
-    }
-    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] {
-        margin-bottom: 0.15rem;
-    }
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        gap: 0.55rem;
+        color: #263238 !important;
+        border: 1px solid #AAB6C5 !important;
     }
 
-    /* GRID: white panels separated by thin, visible grey borders */
+    /* Consistent column alignment and less unnecessary space */
+    [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
+        gap: 0.8rem !important;
+        align-items: stretch !important;
+    }
+
     [data-testid="stMain"] [data-testid="column"] {
         background: #FFFFFF !important;
         border: 1px solid #D5DCE5 !important;
-        border-radius: 6px !important;
-        padding: 0.55rem 0.65rem 0.65rem 0.65rem;
+        border-radius: 8px !important;
+        padding: 0.65rem !important;
         box-shadow: none !important;
-        min-width: 0;
-    }
-    [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
-        gap: 0.65rem !important;
-        align-items: stretch;
-    }
-    [data-testid="stMain"] [data-testid="stVerticalBlock"] > [data-testid="stHorizontalBlock"] {
-        margin-bottom: 0.6rem;
+        min-width: 0 !important;
     }
 
-    /* Chart/table surfaces stay white; borders provide the separation */
+    [data-testid="stVerticalBlock"] {
+        gap: 0.55rem;
+    }
+
+    /* Charts and tables */
     [data-testid="stPlotlyChart"],
     [data-testid="stDataFrame"],
     [data-testid="stTable"] {
         background: #FFFFFF !important;
-        border: 1px solid #E0E4EA;
-        border-radius: 4px;
-        overflow: hidden;
+        border: 1px solid #D5DCE5 !important;
+        border-radius: 5px !important;
     }
+
     [data-testid="stPlotlyChart"] > div {
         background: #FFFFFF !important;
     }
 
-    h1, h2, h3, h4 {
-        color: #26384D;
-    }
     hr {
-        border-color: #D5DCE5;
+        border-color: #D5DCE5 !important;
     }
     </style>
     """,
