@@ -276,59 +276,22 @@ def build_narrative(row):
     return affected_text, hypothesis, confidence, evidence
 
 
-
-
-
 # ==================================================
-# 4. HEADER
+# 4. HEADER — SIMPLE, CLEAR AND RELIABLE
 # ==================================================
+
+st.title("E-Commerce Anomaly Intelligence")
 
 st.markdown(
-    """
-    <div style="
-        background: linear-gradient(110deg, #10284A, #245B86);
-        padding: 24px 24px 20px 24px;
-        border-radius: 12px;
-        margin: 0 0 12px 0;
-        min-height: 120px;
-        box-sizing: border-box;
-        overflow: visible;
-    ">
-        <div style="
-            color: #FFFFFF !important;
-            font-family: Arial, sans-serif;
-            font-size: 32px;
-            font-weight: 800;
-            line-height: 1.5;
-            padding: 0;
-            margin: 0 0 8px 0;
-            display: block;
-            overflow: visible;
-        ">
-            E-Commerce Anomaly Intelligence
-        </div>
-
-        <div style="
-            color: #FFFFFF !important;
-            font-family: Arial, sans-serif;
-            font-size: 16px;
-            font-weight: 600;
-            line-height: 1.5;
-            padding: 0;
-            margin: 0;
-            display: block;
-        ">
-            Sales monitoring | Root-cause investigation | Action ownership
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
+    "**Sales monitoring | Root-cause investigation | Action ownership**"
 )
 
 st.caption(
     "Historical-data monitoring prototype. Anomaly alerts are signals "
     "for investigation, not proof of root cause."
 )
+
+st.divider()
 
 
 # ==================================================
