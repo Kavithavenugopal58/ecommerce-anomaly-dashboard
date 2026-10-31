@@ -640,23 +640,26 @@ else:
 with trend_col:
     st.subheader("KPI Trend with Anomalies")
 
-    kpi_name = st.selectbox(
-        "Select KPI",
-        [
-            "Orders",
-            "Revenue (INR)",
-            "Weighted AOV (INR)",
-            "Cancellation Rate (%)"
-        ],
-        key="trend_kpi_selector"
-    )
+    # Keep the two trend controls side by side for a cleaner layout.
+    trend_filter_col1, trend_filter_col2 = st.columns(2)
+    with trend_filter_col1:
+        kpi_name = st.selectbox(
+            "Select KPI",
+            [
+                "Orders",
+                "Revenue (INR)",
+                "Weighted AOV (INR)",
+                "Cancellation Rate (%)"
+            ],
+            key="trend_kpi_selector"
+        )
 
-    # One dropdown replaces the old category selector.
-    chart_view = st.selectbox(
-        "Chart View",
-        ["Overall Trend", "Category-wise Trend"],
-        key="trend_chart_view_selector"
-    )
+    with trend_filter_col2:
+        chart_view = st.selectbox(
+            "Chart View",
+            ["Overall Trend", "Category-wise Trend"],
+            key="trend_chart_view_selector"
+        )
 
     fig = go.Figure()
 
@@ -1725,62 +1728,60 @@ else:
         st.subheader("Product-Level Investigation")
 
         st.caption(
-            "Investigate individual products. The sidebar Category "
-            "filter applies to this panel."
+            "Explore product contribution or identify products with "
+            "potential KPI anomalies within the selected category."
         )
 
         product_filtered = selected_data.copy()
 
         if category != "All":
             product_filtered = product_filtered[
-                product_filtered["Category"].astype(str)
-                == str(category)
+                product_filtered["Category"].astype(str) == str(category)
             ].copy()
+
+        # Two modes: preserve the existing contribution pie and add
+        # product-level anomaly investigation as a separate view.
+        product_view_col1, product_view_col2 = st.columns(2)
+        with product_view_col1:
+            product_metric = st.selectbox(
+                "Select KPI",
+                list(KPI_CONFIG.keys()),
+                key="product_investigation_metric",
+            )
+        with product_view_col2:
+            product_view = st.selectbox(
+                "Product View",
+                ["Product Contribution (%)", "Product Anomaly Investigation"],
+                key="product_investigation_view",
+            )
 
         if product_filtered.empty:
             st.info(
                 "No product data matches the selected dates, "
                 "geography and category."
             )
-        else:
-            product_metric = st.selectbox(
-                "Select KPI for Product Investigation",
-                list(KPI_CONFIG.keys()),
-                key="product_investigation_metric",
-            )
-
+        elif product_view == "Product Contribution (%)":
+            # EXISTING VIEW — overall percentage contribution of each product.
             if product_metric == "Orders":
-                product_summary = (
-                    product_filtered.groupby(
-                        "Product_Name", as_index=False
-                    )
-                    .agg(Value=("Orders", "sum"))
-                )
+                product_summary = product_filtered.groupby(
+                    "Product_Name", as_index=False
+                ).agg(Value=("Orders", "sum"))
 
             elif product_metric == "Revenue (INR)":
-                product_summary = (
-                    product_filtered.groupby(
-                        "Product_Name", as_index=False
-                    )
-                    .agg(Value=("Revenue_INR", "sum"))
-                )
+                product_summary = product_filtered.groupby(
+                    "Product_Name", as_index=False
+                ).agg(Value=("Revenue_INR", "sum"))
 
             elif product_metric == "Average Order Value (AOV)":
-                product_summary = (
-                    product_filtered.groupby(
-                        "Product_Name", as_index=False
-                    )
-                    .agg(
-                        Revenue=("Revenue_INR", "sum"),
-                        Orders=("Orders", "sum"),
-                    )
+                product_summary = product_filtered.groupby(
+                    "Product_Name", as_index=False
+                ).agg(
+                    Revenue=("Revenue_INR", "sum"),
+                    Orders=("Orders", "sum"),
                 )
-
                 product_summary["Value"] = (
                     product_summary["Revenue"]
-                    / product_summary["Orders"].where(
-                        product_summary["Orders"] > 0
-                    )
+                    / product_summary["Orders"].where(product_summary["Orders"] > 0)
                 )
 
             else:
@@ -1788,137 +1789,269 @@ else:
                     product_filtered["Cancellation_Rate_Pct"]
                     * product_filtered["Orders"].clip(lower=0)
                 )
-
-                product_summary = (
-                    product_filtered.groupby(
-                        "Product_Name", as_index=False
-                    )
-                    .agg(
-                        Cancel_Weighted=("_Cancel_Weighted", "sum"),
-                        Orders=("Orders", "sum"),
-                    )
+                product_summary = product_filtered.groupby(
+                    "Product_Name", as_index=False
+                ).agg(
+                    Cancel_Weighted=("_Cancel_Weighted", "sum"),
+                    Orders=("Orders", "sum"),
                 )
-
                 product_summary["Value"] = (
                     product_summary["Cancel_Weighted"]
-                    / product_summary["Orders"].where(
-                        product_summary["Orders"] > 0
-                    )
+                    / product_summary["Orders"].where(product_summary["Orders"] > 0)
                 )
 
-            product_summary = product_summary.dropna(
-                subset=["Value"]
+            product_summary = product_summary.dropna(subset=["Value"])
+            product_summary = product_summary[product_summary["Value"] >= 0].sort_values(
+                "Value", ascending=False
             )
 
-            product_summary = product_summary[
-                product_summary["Value"] >= 0
-            ].sort_values("Value", ascending=False)
-
             if product_summary.empty or product_summary["Value"].sum() <= 0:
-                st.info(
-                    "No positive values are available for this KPI "
-                    "under the selected filters."
-                )
+                st.info("No positive values are available for this KPI under the selected filters.")
             else:
-                # Keep the chart readable: top 7 products + other products.
                 top_n = 7
-
                 if len(product_summary) > top_n:
-                    top_products = product_summary.head(top_n)[
+                    product_chart_data = product_summary.head(top_n)[
                         ["Product_Name", "Value"]
                     ].copy()
-
-                    other_value = product_summary.iloc[top_n:][
-                        "Value"
-                    ].sum()
-
+                    other_value = product_summary.iloc[top_n:]["Value"].sum()
                     if other_value > 0:
-                        top_products = pd.concat(
+                        product_chart_data = pd.concat(
                             [
-                                top_products,
+                                product_chart_data,
                                 pd.DataFrame({
                                     "Product_Name": ["Other products"],
                                     "Value": [other_value],
                                 }),
-                            ],
-                            ignore_index=True,
+                            ], ignore_index=True
                         )
-
-                    product_chart_data = top_products
                 else:
-                    product_chart_data = product_summary[
-                        ["Product_Name", "Value"]
-                    ].copy()
+                    product_chart_data = product_summary[["Product_Name", "Value"]].copy()
 
                 product_fig = px.pie(
                     product_chart_data,
                     names="Product_Name",
                     values="Value",
                     hole=0.42,
-                    title=f"{product_metric} by Product",
+                    title=f"{product_metric} by Product — Contribution",
                 )
-
                 product_fig.update_traces(
                     textposition="inside",
                     textinfo="percent",
                     hovertemplate=(
-                        "<b>%{label}</b><br>"
-                        "Value: %{value:,.2f}<br>"
+                        "<b>%{label}</b><br>Value: %{value:,.2f}<br>"
                         "Share: %{percent}<extra></extra>"
                     ),
                 )
-
-                
                 product_fig.update_layout(
                     paper_bgcolor="#FFFFFF",
                     plot_bgcolor="#FFFFFF",
                     height=360,
                     autosize=True,
                     margin=dict(l=12, r=12, t=45, b=55),
-                    font=dict(
-                        family="Arial, sans-serif",
-                        size=13,
-                        color="#263238"
-                    ),
+                    font=dict(family="Arial, sans-serif", size=13, color="#263238"),
                     title=dict(
-                        text=f"{product_metric} by Product",
+                        text=f"{product_metric} by Product — Contribution",
                         font=dict(size=17, color="#172B4D"),
-                        x=0.02,
-                        xanchor="left"
+                        x=0.02, xanchor="left"
                     ),
                     legend=dict(
-                        orientation="h",
-                        yanchor="top",
-                        y=-0.08,
-                        x=0,
-                        font=dict(size=10, color="#263238")
+                        orientation="h", yanchor="top", y=-0.08,
+                        x=0, font=dict(size=10, color="#263238")
                     )
                 )
-
-
-                st.plotly_chart(
-                    product_fig,
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                )
-
+                st.plotly_chart(product_fig, use_container_width=True,
+                                config={"displayModeBar": False})
                 st.caption(
-                    f"Date range: {range_start:%d %b %Y} to "
-                    f"{range_end:%d %b %Y} | Geography: {geo} | "
-                    f"Category: {category}"
+                    f"Date range: {range_start:%d %b %Y} to {range_end:%d %b %Y} | "
+                    f"Geography: {geo} | Category: {category}. "
+                    "Percentages show each product's share of the selected KPI."
+                )
+                with st.expander("View detailed product contribution"):
+                    contribution_table = product_summary[["Product_Name", "Value"]].copy()
+                    contribution_table["Contribution (%)"] = (
+                        contribution_table["Value"] / contribution_table["Value"].sum() * 100
+                    )
+                    st.dataframe(
+                        contribution_table.rename(columns={
+                            "Product_Name": "Product", "Value": product_metric
+                        }), use_container_width=True, hide_index=True
+                    )
+
+        else:
+            # NEW VIEW — compare each product with its own weekday baseline.
+            # Historical reference uses all available dates, while the
+            # results displayed are limited to the selected date range.
+            anomaly_history = history_data.copy()
+            if category != "All":
+                anomaly_history = anomaly_history[
+                    anomaly_history["Category"].astype(str) == str(category)
+                ].copy()
+
+            if anomaly_history.empty:
+                st.info("No historical product records are available for this category and geography.")
+            else:
+                # Aggregate to one daily record per product.
+                anomaly_history["Orders"] = pd.to_numeric(anomaly_history["Orders"], errors="coerce")
+                anomaly_history["Revenue_INR"] = pd.to_numeric(anomaly_history["Revenue_INR"], errors="coerce")
+                anomaly_history["Cancellation_Rate_Pct"] = pd.to_numeric(
+                    anomaly_history["Cancellation_Rate_Pct"], errors="coerce"
+                )
+                product_daily = anomaly_history.groupby(
+                    ["Date", "Category", "Product_Name"], as_index=False
+                ).agg(
+                    Orders=("Orders", "sum"),
+                    Revenue_INR=("Revenue_INR", "sum"),
+                    Cancel_Weighted=("Cancellation_Rate_Pct", lambda x: 0.0),
                 )
 
-                with st.expander("View detailed product figures"):
-                    st.dataframe(
-                        product_summary[
-                            ["Product_Name", "Value"]
-                        ].rename(columns={
-                            "Product_Name": "Product",
-                            "Value": product_metric,
-                        }),
-                        use_container_width=True,
-                        hide_index=True,
+                anomaly_history["_Cancel_Weighted"] = (
+                    anomaly_history["Cancellation_Rate_Pct"] * anomaly_history["Orders"].clip(lower=0)
+                )
+                cancel_product_daily = anomaly_history.groupby(
+                    ["Date", "Category", "Product_Name"], as_index=False
+                ).agg(
+                    Cancel_Weighted=("_Cancel_Weighted", "sum"),
+                    Cancel_Orders=("Orders", "sum"),
+                    Cancel_Mean=("Cancellation_Rate_Pct", "mean"),
+                )
+                cancel_product_daily["Cancellation Rate (%)"] = (
+                    cancel_product_daily["Cancel_Weighted"] /
+                    cancel_product_daily["Cancel_Orders"].where(cancel_product_daily["Cancel_Orders"] > 0)
+                ).fillna(cancel_product_daily["Cancel_Mean"])
+                product_daily = product_daily.drop(columns=["Cancel_Weighted"]).merge(
+                    cancel_product_daily[["Date", "Category", "Product_Name", "Cancellation Rate (%)"]],
+                    on=["Date", "Category", "Product_Name"], how="left"
+                )
+                product_daily["Average Order Value (AOV)"] = (
+                    product_daily["Revenue_INR"] /
+                    product_daily["Orders"].where(product_daily["Orders"] > 0)
+                )
+                metric_col = {
+                    "Orders": "Orders",
+                    "Revenue (INR)": "Revenue_INR",
+                    "Average Order Value (AOV)": "Average Order Value (AOV)",
+                    "Cancellation Rate (%)": "Cancellation Rate (%)",
+                }[product_metric]
+                product_daily["Day_of_Week"] = product_daily["Date"].dt.dayofweek
+                product_daily = product_daily.sort_values("Date").reset_index(drop=True)
+
+                # Leave-one-out weekday median and MAD per product.
+                product_daily["Expected"] = float("nan")
+                product_daily["MAD"] = float("nan")
+                for (cat_name, product_name), product_group in product_daily.groupby(
+                    ["Category", "Product_Name"]
+                ):
+                    group_indices = product_group.index
+                    for row_idx in group_indices:
+                        weekday = product_daily.at[row_idx, "Day_of_Week"]
+                        reference = product_daily.loc[
+                            (product_daily.index.isin(group_indices)) &
+                            (product_daily["Day_of_Week"] == weekday) &
+                            (product_daily.index != row_idx), metric_col
+                        ].dropna()
+                        if len(reference) < 2:
+                            reference = product_daily.loc[
+                                product_daily.index.isin(group_indices) &
+                                (product_daily.index != row_idx), metric_col
+                            ].dropna()
+                        if not reference.empty:
+                            expected_value = reference.median()
+                            product_daily.at[row_idx, "Expected"] = expected_value
+                            product_daily.at[row_idx, "MAD"] = (reference - expected_value).abs().median()
+
+                product_daily["Deviation"] = product_daily[metric_col] - product_daily["Expected"]
+                product_daily["Abs_Deviation"] = product_daily["Deviation"].abs()
+                # Adverse direction: falling orders/revenue/AOV or rising cancellation.
+                if product_metric == "Cancellation Rate (%)":
+                    product_daily["Adverse_Deviation"] = product_daily["Deviation"]
+                else:
+                    product_daily["Adverse_Deviation"] = -product_daily["Deviation"]
+                product_daily["Deviation_Pct"] = (
+                    product_daily["Adverse_Deviation"] /
+                    product_daily["Expected"].abs().replace(0, pd.NA) * 100
+                )
+                product_daily["Threshold"] = 3 * product_daily["MAD"].fillna(0)
+                product_daily["Tolerance"] = product_daily["Expected"].abs().fillna(0) * 0.01
+                product_daily["Is_Anomaly"] = (
+                    product_daily["Expected"].notna() &
+                    product_daily["Adverse_Deviation"].gt(0) &
+                    (
+                        product_daily["Adverse_Deviation"].gt(product_daily["Threshold"]) |
+                        ((product_daily["MAD"].fillna(0) == 0) &
+                         product_daily["Adverse_Deviation"].gt(product_daily["Tolerance"]))
                     )
+                )
+
+                selected_product_daily = product_daily[
+                    (product_daily["Date"] >= range_start) &
+                    (product_daily["Date"] < range_end + pd.Timedelta(days=1))
+                ].copy()
+                anomaly_rows = selected_product_daily[
+                    selected_product_daily["Is_Anomaly"].fillna(False)
+                ].copy()
+
+                if selected_product_daily.empty:
+                    st.info("No product-level daily data exists in the selected period.")
+                elif anomaly_rows.empty:
+                    st.success(
+                        "No product-level adverse anomalies were detected for this KPI "
+                        "within the selected category, geography and date range."
+                    )
+                else:
+                    product_impact = anomaly_rows.groupby("Product_Name", as_index=False).agg(
+                        Anomaly_Days=("Date", "nunique"),
+                        Worst_Adverse_Deviation_Pct=("Deviation_Pct", "max"),
+                        Total_Adverse_Deviation=("Adverse_Deviation", "sum"),
+                    ).sort_values(
+                        ["Anomaly_Days", "Worst_Adverse_Deviation_Pct"], ascending=False
+                    )
+                    st.markdown("**Products with potential adverse anomalies**")
+                    impact_fig = px.bar(
+                        product_impact.head(10).sort_values("Worst_Adverse_Deviation_Pct"),
+                        x="Worst_Adverse_Deviation_Pct",
+                        y="Product_Name",
+                        orientation="h",
+                        color="Anomaly_Days",
+                        color_continuous_scale="Reds",
+                        hover_data={
+                            "Anomaly_Days": True,
+                            "Worst_Adverse_Deviation_Pct": ":.1f",
+                            "Total_Adverse_Deviation": ":,.2f",
+                        },
+                        labels={
+                            "Worst_Adverse_Deviation_Pct": "Worst adverse deviation (%)",
+                            "Product_Name": "Product",
+                            "Anomaly_Days": "Anomaly days",
+                        },
+                    )
+                    impact_fig.update_layout(
+                        paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
+                        height=360, margin=dict(l=10, r=10, t=25, b=35),
+                        font=dict(color="#263238", size=11),
+                        coloraxis_colorbar=dict(title="Anomaly days"),
+                    )
+                    st.plotly_chart(impact_fig, use_container_width=True,
+                                    config={"displayModeBar": False})
+                    st.caption(
+                        "Products are ranked by the number of adverse anomaly days and "
+                        "the largest adverse deviation. For Orders, Revenue and AOV, "
+                        "a drop is treated as adverse; for Cancellation Rate, an increase "
+                        "is adverse. These are investigation signals, not proof of cause."
+                    )
+                    with st.expander("View product anomaly dates and evidence", expanded=True):
+                        evidence_table = anomaly_rows[[
+                            "Date", "Category", "Product_Name", metric_col,
+                            "Expected", "Deviation_Pct", "MAD"
+                        ]].rename(columns={
+                            "Date": "Anomaly Date",
+                            "Product_Name": "Product",
+                            metric_col: f"Actual {product_metric}",
+                            "Expected": "Expected Baseline",
+                            "Deviation_Pct": "Adverse Deviation (%)",
+                            "MAD": "Historical MAD",
+                        }).sort_values("Adverse Deviation (%)", ascending=False)
+                        st.dataframe(evidence_table, use_container_width=True, hide_index=True)
+
 
 # ==========================================================
 # END OF SECTIONS 9 & 10
