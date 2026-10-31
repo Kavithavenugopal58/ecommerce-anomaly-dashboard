@@ -1356,11 +1356,19 @@ else:
             "restrict this investigation."
         )
 
-        category_kpi = st.selectbox(
-            "Select KPI for Category Investigation",
-            list(KPI_CONFIG.keys()),
-            key="category_investigation_kpi",
-        )
+        category_filter_col1, category_filter_col2 = st.columns(2)
+        with category_filter_col1:
+            category_kpi = st.selectbox(
+                "Select KPI for Category Investigation",
+                list(KPI_CONFIG.keys()),
+                key="category_investigation_kpi",
+            )
+        with category_filter_col2:
+            category_view = st.selectbox(
+                "Category View",
+                ["Category Contribution (%)", "Actual vs Expected by Category"],
+                key="category_investigation_view",
+            )
 
         cfg = KPI_CONFIG[category_kpi]
 
@@ -1594,131 +1602,172 @@ else:
                 "Gap", ascending=False, na_position="last"
             )
 
-            st.markdown(
-                f"**{cfg['label']} — actual vs expected by category**"
-            )
+            # --------------------------------------------------
+            # DISPLAY SELECTED CATEGORY VIEW
+            # --------------------------------------------------
+            if category_view == "Category Contribution (%)":
+                # Orders and revenue are additive, so category share is
+                # a meaningful percentage of the overall total.
+                if category_kpi in ["Orders", "Revenue (INR)"]:
+                    contribution_total = results["Actual"].clip(lower=0).sum()
+                    results["Category_Share_Pct"] = (
+                        results["Actual"].clip(lower=0) / contribution_total * 100
+                        if contribution_total > 0 else 0.0
+                    )
+                    contribution_data = results.dropna(
+                        subset=["Category_Share_Pct"]
+                    ).sort_values("Category_Share_Pct", ascending=True)
 
-            chart_data = results.dropna(
-                subset=["Gap"]
-            ).sort_values("Gap", ascending=True)
-
-            if chart_data.empty:
-                st.warning(
-                    "A historical baseline is not available for "
-                    "this KPI and filter selection."
-                )
-            else:
-                category_fig = px.bar(
-                    chart_data,
-                    x="Gap",
-                    y="Category",
-                    orientation="h",
-                    color="Status",
-                    color_discrete_map={
-                        "Below expectation": "#E74C3C",
-                        "Better than expected": "#27AE60",
-                        "At expectation": "#94A3B8",
-                        "Baseline unavailable": "#94A3B8",
-                    },
-                    hover_data={
-                        "Actual": ":,.2f",
-                        "Expected": ":,.2f",
-                        "Gap": ":,.2f",
-                        "Contribution_Pct": ":.1f",
-                    },
-                    labels={
-                        "Gap": "Unfavourable difference",
-                        "Category": "",
-                        "Status": "Performance",
-                        "Contribution_Pct": "Share of adverse gap (%)",
-                    },
-                )
-
-                category_fig.add_vline(
-                    x=0,
-                    line_width=1,
-                    line_color="#64748B",
-                )
-
-            
-                category_fig.update_layout(
-                    paper_bgcolor="#FFFFFF",
-                    plot_bgcolor="#FFFFFF",
-                    height=360,
-                    autosize=True,
-                    margin=dict(l=12, r=12, t=35, b=35),
-                    font=dict(
-                        family="Arial, sans-serif",
-                        size=13,
-                        color="#263238"
-                    ),
-                    title_font=dict(
-                        size=17,
-                        color="#172B4D"
-                    ),
-                    legend=dict(
-                        orientation="h",
-                        yanchor="bottom",
-                        y=1.02,
-                        x=0,
-                        font=dict(
-                            size=11,
-                            color="#263238"
+                    st.markdown(
+                        f"**{cfg['label']} — percentage contribution by category**"
+                    )
+                    if contribution_data.empty or contribution_total <= 0:
+                        st.info("No positive category values are available for this selection.")
+                    else:
+                        contribution_fig = px.bar(
+                            contribution_data,
+                            x="Category_Share_Pct",
+                            y="Category",
+                            orientation="h",
+                            text=contribution_data["Category_Share_Pct"].map(
+                                lambda value: f"{value:.1f}%"
+                            ),
+                            labels={
+                                "Category_Share_Pct": "Share of total (%)",
+                                "Category": "",
+                            },
                         )
-                    ),
-                    xaxis=dict(
-                        title=dict(
-                            text="Unfavourable difference",
-                            font=dict(size=12, color="#263238")
+                        contribution_fig.update_traces(
+                            marker_color="#2878D0",
+                            textposition="outside",
+                            cliponaxis=False,
+                            hovertemplate=(
+                                "<b>%{y}</b><br>Share: %{x:.1f}%<extra></extra>"
+                            ),
+                        )
+                        contribution_fig.update_layout(
+                            paper_bgcolor="#FFFFFF",
+                            plot_bgcolor="#FFFFFF",
+                            height=360,
+                            margin=dict(l=12, r=45, t=20, b=35),
+                            xaxis=dict(
+                                title="Share of total (%)",
+                                ticksuffix="%",
+                                range=[0, max(100, contribution_data["Category_Share_Pct"].max() * 1.15)],
+                                gridcolor="#E2E8F0",
+                            ),
+                            yaxis=dict(title=None, automargin=True),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(
+                            contribution_fig,
+                            use_container_width=True,
+                            config={"displayModeBar": False},
+                        )
+                        with st.expander("View category contribution figures"):
+                            share_table = contribution_data[
+                                ["Category", "Actual", "Category_Share_Pct"]
+                            ].sort_values("Category_Share_Pct", ascending=False).rename(
+                                columns={
+                                    "Actual": f"Total {cfg['label']}",
+                                    "Category_Share_Pct": "Share of Total (%)",
+                                }
+                            )
+                            st.dataframe(share_table, use_container_width=True, hide_index=True)
+                else:
+                    # AOV and cancellation rate are ratios, not additive
+                    # measures. Showing a share of their sum would mislead.
+                    st.info(
+                        "Category contribution percentages are meaningful for Orders and Revenue. "
+                        "For AOV and Cancellation Rate, select 'Actual vs Expected by Category' "
+                        "because these are rate-based KPIs and do not add up across categories."
+                    )
+
+            else:
+                st.markdown(
+                    f"**{cfg['label']} — actual vs expected by category**"
+                )
+
+                chart_data = results.dropna(
+                    subset=["Gap"]
+                ).sort_values("Gap", ascending=True)
+
+                if chart_data.empty:
+                    st.warning(
+                        "A historical baseline is not available for "
+                        "this KPI and filter selection."
+                    )
+                else:
+                    category_fig = px.bar(
+                        chart_data,
+                        x="Gap",
+                        y="Category",
+                        orientation="h",
+                        color="Status",
+                        color_discrete_map={
+                            "Below expectation": "#E74C3C",
+                            "Better than expected": "#27AE60",
+                            "At expectation": "#94A3B8",
+                            "Baseline unavailable": "#94A3B8",
+                        },
+                        hover_data={
+                            "Actual": ":,.2f",
+                            "Expected": ":,.2f",
+                            "Gap": ":,.2f",
+                            "Contribution_Pct": ":.1f",
+                        },
+                        labels={
+                            "Gap": "Unfavourable difference",
+                            "Category": "",
+                            "Status": "Performance",
+                            "Contribution_Pct": "Share of adverse gap (%)",
+                        },
+                    )
+                    category_fig.add_vline(
+                        x=0,
+                        line_width=1,
+                        line_color="#64748B",
+                    )
+                    category_fig.update_layout(
+                        paper_bgcolor="#FFFFFF",
+                        plot_bgcolor="#FFFFFF",
+                        height=360,
+                        autosize=True,
+                        margin=dict(l=12, r=12, t=35, b=35),
+                        font=dict(family="Arial, sans-serif", size=13, color="#263238"),
+                        legend=dict(
+                            orientation="h", yanchor="bottom", y=1.02, x=0,
+                            font=dict(size=11, color="#263238"),
                         ),
-                        tickfont=dict(size=11, color="#344054"),
-                        gridcolor="#E2E8F0",
-                        zerolinecolor="#94A3B8",
-                        automargin=True
-                    ),
-                    yaxis=dict(
-                        title=None,
-                        tickfont=dict(size=11, color="#344054"),
-                        automargin=True
+                        xaxis=dict(
+                            title=dict(text="Unfavourable difference", font=dict(size=12, color="#263238")),
+                            tickfont=dict(size=11, color="#344054"),
+                            gridcolor="#E2E8F0",
+                            zerolinecolor="#94A3B8",
+                            automargin=True,
+                        ),
+                        yaxis=dict(title=None, tickfont=dict(size=11, color="#344054"), automargin=True),
                     )
-                )
-
-
-                st.plotly_chart(
-                    category_fig,
-                    use_container_width=True,
-                    config={"displayModeBar": False},
-                )
-
-                st.caption(
-                    "Red indicates an unfavourable gap; green indicates "
-                    "better-than-expected performance. For cancellation "
-                    "rate, an increase is unfavourable. These signals "
-                    "support investigation and do not prove root cause."
-                )
-
-                with st.expander("View detailed category figures"):
-                    detail_table = results[
-                        [
-                            "Category",
-                            "Actual",
-                            "Expected",
-                            "Gap",
-                            "Contribution_Pct",
-                            "Status",
-                        ]
-                    ].rename(columns={
-                        "Actual": f"Actual {cfg['label']}",
-                        "Expected": f"Expected {cfg['label']}",
-                        "Gap": "Unfavourable Gap",
-                        "Contribution_Pct": "Share of Adverse Gap (%)",
-                    })
-
-                    st.dataframe(
-                        detail_table,
+                    st.plotly_chart(
+                        category_fig,
                         use_container_width=True,
-                        hide_index=True,
+                        config={"displayModeBar": False},
                     )
+                    st.caption(
+                        "Red indicates an unfavourable gap; green indicates better-than-expected "
+                        "performance. For cancellation rate, an increase is unfavourable. "
+                        "These signals support investigation and do not prove root cause."
+                    )
+                    with st.expander("View detailed category figures"):
+                        detail_table = results[
+                            ["Category", "Actual", "Expected", "Gap", "Contribution_Pct", "Status"]
+                        ].rename(columns={
+                            "Actual": f"Actual {cfg['label']}",
+                            "Expected": f"Expected {cfg['label']}",
+                            "Gap": "Unfavourable Gap",
+                            "Contribution_Pct": "Share of Adverse Gap (%)",
+                        })
+                        st.dataframe(detail_table, use_container_width=True, hide_index=True)
 
     # ------------------------------------------------------
     # SECTION 10: PRODUCT-LEVEL INVESTIGATION
@@ -2060,453 +2109,7 @@ else:
 
 
 # ==========================================================
-# ADDITIONAL SECTION: CATEGORY KPI COMPARISON
-# Uses existing date and geography filters
-# ==========================================================
-
-st.subheader("Category KPI Comparison")
-
-st.caption(
-    "Compare category performance over the selected date range "
-    "against historical weekday expectations."
-)
-
-category_kpi_extra = st.selectbox(
-    "Select KPI for Category Comparison",
-    [
-        "Orders",
-        "Revenue (INR)",
-        "Average Order Value (AOV)",
-        "Cancellation Rate (%)",
-    ],
-    key="additional_category_kpi_selector",
-)
-
-extra_config = {
-    "Orders": {
-        "actual_col": "Orders",
-        "daily_col": "Orders",
-        "kind": "sum",
-        "format": "{:,.0f}",
-        "bad_direction": "lower",
-    },
-    "Revenue (INR)": {
-        "actual_col": "Revenue_INR",
-        "daily_col": "Revenue_INR",
-        "kind": "sum",
-        "format": "₹{:,.0f}",
-        "bad_direction": "lower",
-    },
-    "Average Order Value (AOV)": {
-        "actual_col": "AOV_INR",
-        "daily_col": "AOV_INR",
-        "kind": "ratio",
-        "format": "₹{:,.2f}",
-        "bad_direction": "lower",
-    },
-    "Cancellation Rate (%)": {
-        "actual_col": "Cancellation_Rate_Pct",
-        "daily_col": "Cancellation_Rate_Pct",
-        "kind": "rate",
-        "format": "{:.2f}%",
-        "bad_direction": "higher",
-    },
-}
-
-cfg = extra_config[category_kpi_extra]
-
-if selected_data.empty or history_data.empty:
-    st.info("No data is available for the selected date range.")
-
-elif cfg["actual_col"] not in history_data.columns:
-    st.error(
-        f"Required column '{cfg['actual_col']}' is missing."
-    )
-
-else:
-    extra_hist = history_data.copy()
-    extra_selected = selected_data.copy()
-
-    for frame in [extra_hist, extra_selected]:
-        frame["Date"] = pd.to_datetime(
-            frame["Date"], errors="coerce"
-        )
-
-        for col in [
-            "Orders",
-            "Revenue_INR",
-            "AOV_INR",
-            "Cancellation_Rate_Pct",
-        ]:
-            if col in frame.columns:
-                frame[col] = pd.to_numeric(
-                    frame[col], errors="coerce"
-                )
-
-        frame.dropna(
-            subset=["Date", "Category"], inplace=True
-        )
-
-    # ------------------------------------------------------
-    # ACTUAL VALUES OVER THE SELECTED DATE RANGE
-    # ------------------------------------------------------
-
-    actual_rows = []
-
-    for cat, group in extra_selected.groupby("Category"):
-        orders = group["Orders"].sum()
-        revenue = group["Revenue_INR"].sum()
-
-        if category_kpi_extra == "Orders":
-            actual_value = orders
-
-        elif category_kpi_extra == "Revenue (INR)":
-            actual_value = revenue
-
-        elif category_kpi_extra == "Average Order Value (AOV)":
-            actual_value = (
-                revenue / orders
-                if orders > 0
-                else float("nan")
-            )
-
-        else:
-            weights = group["Orders"].clip(
-                lower=0
-            ).fillna(0)
-
-            valid = group["Cancellation_Rate_Pct"].notna()
-            valid_weights = weights[valid]
-            valid_rates = group.loc[
-                valid, "Cancellation_Rate_Pct"
-            ]
-
-            actual_value = (
-                (valid_rates * valid_weights).sum()
-                / valid_weights.sum()
-                if valid_weights.sum() > 0
-                else float("nan")
-            )
-
-        actual_rows.append({
-            "Category": cat,
-            "Actual": actual_value,
-        })
-
-    actual_df = pd.DataFrame(actual_rows)
-
-    # ------------------------------------------------------
-    # HISTORICAL DAILY KPI BY CATEGORY
-    # ------------------------------------------------------
-
-    daily_rows = []
-
-    for (day, cat), group in extra_hist.groupby(
-        [extra_hist["Date"].dt.normalize(), "Category"]
-    ):
-        orders = group["Orders"].sum()
-        revenue = group["Revenue_INR"].sum()
-
-        if category_kpi_extra == "Orders":
-            value = orders
-
-        elif category_kpi_extra == "Revenue (INR)":
-            value = revenue
-
-        elif category_kpi_extra == "Average Order Value (AOV)":
-            value = (
-                revenue / orders
-                if orders > 0
-                else float("nan")
-            )
-
-        else:
-            weights = group["Orders"].clip(
-                lower=0
-            ).fillna(0)
-
-            valid = group["Cancellation_Rate_Pct"].notna()
-            valid_weights = weights[valid]
-            valid_rates = group.loc[
-                valid, "Cancellation_Rate_Pct"
-            ]
-
-            value = (
-                (valid_rates * valid_weights).sum()
-                / valid_weights.sum()
-                if valid_weights.sum() > 0
-                else float("nan")
-            )
-
-        daily_rows.append({
-            "Date": pd.Timestamp(day),
-            "Category": cat,
-            "Daily_Value": value,
-        })
-
-    daily_df = pd.DataFrame(daily_rows)
-
-    if daily_df.empty:
-        st.info("No historical category data is available.")
-
-    else:
-        daily_df["Weekday"] = daily_df["Date"].dt.dayofweek
-
-        # Same-weekday historical median for each category.
-        weekday_baseline = (
-            daily_df.groupby(
-                ["Category", "Weekday"]
-            )["Daily_Value"]
-            .median()
-            .rename("Weekday_Expected")
-            .reset_index()
-        )
-
-        # Build the selected date range using the existing filters.
-        range_start_extra = pd.to_datetime(
-            extra_selected["Date"].min()
-        ).normalize()
-
-        range_end_extra = pd.to_datetime(
-            extra_selected["Date"].max()
-        ).normalize()
-
-        expected_dates = pd.DataFrame({
-            "Date": pd.date_range(
-                range_start_extra,
-                range_end_extra,
-                freq="D",
-            )
-        })
-
-        expected_dates["Weekday"] = (
-            expected_dates["Date"].dt.dayofweek
-        )
-
-        category_names = sorted(
-            extra_hist["Category"].dropna().unique()
-        )
-
-        expected_dates["_key"] = 1
-        category_frame = pd.DataFrame({
-            "Category": category_names,
-            "_key": 1,
-        })
-
-        expected_grid = expected_dates.merge(
-            category_frame, on="_key"
-        ).drop(columns="_key")
-
-        expected_grid = expected_grid.merge(
-            weekday_baseline,
-            on=["Category", "Weekday"],
-            how="left",
-        )
-
-        # Sum expected daily counts/revenue.
-        # Average expected daily AOV/cancellation rate.
-        if cfg["kind"] == "sum":
-            expected_df = (
-                expected_grid.groupby(
-                    "Category", as_index=False
-                )
-                .agg(
-                    Expected=(
-                        "Weekday_Expected",
-                        lambda s: s.sum(min_count=1),
-                    )
-                )
-            )
-        else:
-            expected_df = (
-                expected_grid.groupby(
-                    "Category", as_index=False
-                )
-                .agg(
-                    Expected=("Weekday_Expected", "mean")
-                )
-            )
-
-        # --------------------------------------------------
-        # DEVIATION AND DISPLAY
-        # --------------------------------------------------
-
-        results = actual_df.merge(
-            expected_df,
-            on="Category",
-            how="outer",
-        )
-
-        results["Deviation_Pct"] = (
-            (results["Actual"] - results["Expected"])
-            / results["Expected"].where(
-                results["Expected"] != 0
-            )
-            * 100
-        )
-
-        if cfg["bad_direction"] == "higher":
-            results["Unfavourable"] = (
-                results["Deviation_Pct"] > 0
-            )
-        else:
-            results["Unfavourable"] = (
-                results["Deviation_Pct"] < 0
-            )
-
-        results["Status"] = results.apply(
-            lambda row: (
-                "Unfavourable"
-                if pd.notna(row["Deviation_Pct"])
-                and bool(row["Unfavourable"])
-                else "Favourable"
-                if pd.notna(row["Deviation_Pct"])
-                else "Baseline unavailable"
-            ),
-            axis=1,
-        )
-
-        results = results.sort_values(
-            "Actual", ascending=True, na_position="first"
-        )
-
-        results["Deviation_Label"] = results[
-            "Deviation_Pct"
-        ].apply(
-            lambda x: f"{x:+.1f}%" if pd.notna(x) else "N/A"
-        )
-
-        results["Actual_Label"] = results["Actual"].apply(
-            lambda x: cfg["format"].format(x)
-            if pd.notna(x) else "N/A"
-        )
-
-        results["Expected_Label"] = results["Expected"].apply(
-            lambda x: cfg["format"].format(x)
-            if pd.notna(x) else "N/A"
-        )
-
-        results["Bar_Color"] = results["Status"].map({
-            "Unfavourable": "#E74C3C",
-            "Favourable": "#15966A",
-            "Baseline unavailable": "#94A3B8",
-        })
-
-        st.markdown(
-            f"**{category_kpi_extra} by Product Category**"
-        )
-
-        st.caption(
-            f"Date range: {range_start_extra:%d %b %Y} – "
-            f"{range_end_extra:%d %b %Y}"
-        )
-
-        # Native Plotly horizontal bar chart.
-        # Values are actual KPI values; hover shows expected and deviation.
-        import plotly.graph_objects as go
-
-        fig_extra = go.Figure()
-
-        for status in [
-            "Unfavourable",
-            "Favourable",
-            "Baseline unavailable",
-        ]:
-            part = results[results["Status"] == status]
-
-            if part.empty:
-                continue
-
-            fig_extra.add_trace(
-                go.Bar(
-                    x=part["Actual"],
-                    y=part["Category"],
-                    orientation="h",
-                    name=status,
-                    marker_color=part["Bar_Color"],
-                    text=part["Actual_Label"],
-                    textposition="outside",
-                    cliponaxis=False,
-                    customdata=part[
-                        [
-                            "Expected_Label",
-                            "Deviation_Label",
-                        ]
-                    ].to_numpy(),
-                    hovertemplate=(
-                        "<b>%{y}</b><br>"
-                        "Actual: %{text}<br>"
-                        "Expected: %{customdata[0]}<br>"
-                        "Deviation: %{customdata[1]}"
-                        "<extra></extra>"
-                    ),
-                )
-            )
-
-        fig_extra.update_layout(
-            barmode="overlay",
-            paper_bgcolor="#FFFFFF",
-            plot_bgcolor="#FFFFFF",
-            height=max(300, 48 * len(results) + 90),
-            margin=dict(l=5, r=65, t=10, b=35),
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                x=0,
-            ),
-            xaxis=dict(
-                title=f"Actual {category_kpi_extra}",
-                showgrid=True,
-                gridcolor="#E8EDF3",
-                zeroline=False,
-            ),
-            yaxis=dict(
-                title="",
-                showgrid=False,
-                automargin=True,
-            ),
-        )
-
-        st.plotly_chart(
-            fig_extra,
-            use_container_width=True,
-            config={"displayModeBar": False},
-        )
-
-        # Compact detail table with deviation percentages.
-        with st.expander("View actual, expected and deviation by category"):
-            detail_df = results[
-                [
-                    "Category",
-                    "Actual_Label",
-                    "Expected_Label",
-                    "Deviation_Label",
-                    "Status",
-                ]
-            ].rename(columns={
-                "Actual_Label": "Actual",
-                "Expected_Label": "Expected",
-                "Deviation_Label": "Deviation vs Expected",
-            })
-
-            st.dataframe(
-                detail_df,
-                use_container_width=True,
-                hide_index=True,
-            )
-
-        st.caption(
-            "Red indicates an unfavourable change; green indicates "
-            "a favourable change. Cancellation-rate increases are "
-            "unfavourable. Baselines use the historical median for "
-            "the same weekday. These are investigation signals, "
-            "not confirmed root causes."
-        )
-
-# ==========================================================
-# END OF ADDITIONAL CATEGORY KPI COMPARISON
-# SECTION 11 CONTINUES BELOW
+# SECTION 11: ACTIONABLE ALERT FEED STARTS BELOW
 # ==========================================================
 
 # ==================================================
