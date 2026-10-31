@@ -2306,38 +2306,62 @@ def generate_gemini_narrative(
     supporting_owner,
     recommended_action
 ):
-    """Generate an AI investigation narrative using Gemini."""
+    """Generate a Gemini investigation narrative grounded in Google Search."""
 
     from google import genai
     import streamlit as st
+    from datetime import timedelta
 
     api_key = st.secrets.get("GEMINI_API_KEY", "")
     model_name = st.secrets.get("GEMINI_MODEL", "gemini-3.8-flash")
 
     if not api_key:
-        return None, "GEMINI_API_KEY is missing from Streamlit Secrets."
+        return None, [], "GEMINI_API_KEY is missing from Streamlit Secrets."
 
     date_value = selected_row.get("Date", "Unknown")
     if hasattr(date_value, "strftime"):
-        date_value = date_value.strftime("%Y-%m-%d")
+        alert_date = date_value.date() if hasattr(date_value, "date") else date_value
+        date_text = alert_date.strftime("%Y-%m-%d")
+        search_start = (alert_date - timedelta(days=3)).strftime("%Y-%m-%d")
+        search_end = (alert_date + timedelta(days=3)).strftime("%Y-%m-%d")
+    else:
+        date_text = str(date_value)
+        search_start = date_text
+        search_end = date_text
 
     evidence_text = "\n".join(
         "- " + str(item) for item in evidence
     ) if evidence else "No detailed evidence supplied."
 
     prompt = f"""
-You are an e-commerce anomaly investigation analyst.
+You are an e-commerce anomaly investigation analyst for an India-focused
+online retail business. Analyze the internal alert and research relevant
+external e-commerce events using Google Search.
 
-Analyze this alert using only the supplied evidence.
-Do not invent facts. Root causes must remain hypotheses,
-not confirmed findings.
+ALERT DATE: {date_text}
+EXTERNAL EVENT SEARCH WINDOW: {search_start} to {search_end} (inclusive).
+Search for events that OCCURRED during this window, not merely events that
+are currently being advertised. Article publication date may differ from
+the event date; clearly distinguish them.
 
-Date: {date_value}
+Search broadly across relevant Indian e-commerce context, including Amazon
+India, Flipkart and other major platforms, major sale/promotional campaigns,
+shopping festivals, competitor events, logistics/last-mile disruptions,
+fulfilment or payment outages, regulatory changes, and other credible
+market events that could plausibly affect online retail KPIs.
+
+Do not assume an event happened. Include only findings supported by the
+search results. Prefer official company announcements and reputable news
+sources. If no relevant event is found for this historical date window,
+state: "No relevant external event was verified in the searched sources."
+Do not substitute present-day 2026 promotions for events in the alert window.
+
+INTERNAL ALERT EVIDENCE (treat this as the source of truth for dashboard metrics):
+Date: {date_text}
 Severity: {selected_row.get('Overall_Anomaly_Severity', 'Unknown')}
 Affected KPIs: {affected}
 Rule-based hypothesis: {hypothesis}
 Rule-based confidence: {confidence}
-
 Evidence:
 {evidence_text}
 
@@ -2346,38 +2370,61 @@ Supporting Owner: {supporting_owner}
 Existing recommended action: {recommended_action}
 
 Write a concise business-friendly report with these headings:
-
 1. Alert Summary
 2. Business Impact
-3. Possible Root Causes
-4. Evidence and Limitations
-5. Three Prioritized Investigation Steps
-6. Ownership and Recommended Action
+3. Internal Evidence and Possible Root Causes
+4. External Event Context (include event date, source publication date if
+   available, relevance, and whether the connection is weak/moderate/strong)
+5. Evidence Limitations
+6. Three Prioritized Investigation Steps
+7. Ownership and Recommended Action
 
-Clearly separate observed evidence from possible explanations.
-Do not claim a cause is confirmed unless the evidence proves it.
-Preserve the assigned Owner and Supporting Owner.
+Keep internal statistical evidence separate from external web findings.
+An event occurring at the same time is NOT proof that it caused the anomaly.
+Do not claim causation. If relevance is uncertain, say so. Preserve the
+assigned Owner and Supporting Owner. Do not invent citations or sources;
+Google Search citations will be displayed separately by the application.
 """
 
     try:
         client = genai.Client(api_key=api_key)
 
+        # Google Search grounding lets Gemini search for dated events and
+        # return URL citations with its answer.
         response = client.interactions.create(
             model=model_name,
-            input=prompt
+            input=prompt,
+            tools=[{"type": "google_search"}]
         )
 
-        narrative = (
-            getattr(response, "output_text", None) or ""
-        ).strip()
+        narrative = (getattr(response, "output_text", None) or "").strip()
+
+        # Extract source citations from the Interactions API model-output steps.
+        citations = []
+        seen_urls = set()
+        for step in (getattr(response, "steps", None) or []):
+            if getattr(step, "type", None) != "model_output":
+                continue
+            for block in (getattr(step, "content", None) or []):
+                for annotation in (getattr(block, "annotations", None) or []):
+                    if getattr(annotation, "type", None) != "url_citation":
+                        continue
+                    url = (
+                        getattr(annotation, "uri", None)
+                        or getattr(annotation, "url", None)
+                    )
+                    title = getattr(annotation, "title", None) or url
+                    if url and url not in seen_urls:
+                        citations.append({"title": str(title), "url": str(url)})
+                        seen_urls.add(url)
 
         if narrative:
-            return narrative, None
+            return narrative, citations, None
 
-        return None, "Gemini returned an empty response."
+        return None, [], "Gemini returned an empty response."
 
     except Exception as exc:
-        return None, f"{type(exc).__name__}: {str(exc)[:400]}"
+        return None, [], f"{type(exc).__name__}: {str(exc)[:400]}"
 
 # ==================================================
 # 12. ALERT INVESTIGATION: RULE-BASED + GEMINI
@@ -2448,8 +2495,8 @@ if not alert_data.empty:
         type="primary",
         key="generate_gemini_narrative"
     ):
-        with st.spinner("Gemini is analyzing the selected alert evidence..."):
-            gemini_text, gemini_error = generate_gemini_narrative(
+        with st.spinner("Gemini is analyzing the alert and searching for relevant e-commerce events..."):
+            gemini_text, gemini_citations, gemini_error = generate_gemini_narrative(
                 selected_row=selected_row,
                 affected=affected,
                 hypothesis=hypothesis,
@@ -2463,10 +2510,12 @@ if not alert_data.empty:
         if gemini_text:
             st.session_state["gemini_narrative_date"] = selected_date
             st.session_state["gemini_narrative_text"] = gemini_text
+            st.session_state["gemini_narrative_citations"] = gemini_citations
             st.session_state["gemini_narrative_error"] = None
         else:
             st.session_state["gemini_narrative_date"] = selected_date
             st.session_state["gemini_narrative_text"] = None
+            st.session_state["gemini_narrative_citations"] = []
             st.session_state["gemini_narrative_error"] = gemini_error
 
     if st.session_state.get("gemini_narrative_date") == selected_date:
@@ -2476,6 +2525,16 @@ if not alert_data.empty:
         if saved_narrative:
             st.success("Generated successfully by Gemini")
             st.markdown(saved_narrative)
+            saved_citations = st.session_state.get("gemini_narrative_citations", [])
+            if saved_citations:
+                with st.expander("External research sources (Google Search)", expanded=False):
+                    for source in saved_citations:
+                        st.markdown(f"- [{source['title']}]({source['url']})")
+            else:
+                st.caption(
+                    "No URL citations were returned by Google Search for this narrative. "
+                    "Treat any external-event summary as unverified until checked."
+                )
             st.caption(
                 f"Model: {st.secrets.get('GEMINI_MODEL', 'gemini-3.8-flash')}. "
                 "AI-generated analysis is advisory; validate hypotheses "
