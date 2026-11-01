@@ -2495,8 +2495,380 @@ else:
         "Adjust the filters to view alerts."
     )
 
+
+
+# ==========================================================
+# 13. DOWNLOADABLE PDF INVESTIGATION REPORT
+# ==========================================================
+st.divider()
+st.subheader("Download Investigation Report")
+st.write(
+    "Create a PDF report for the currently selected date range, "
+    "geography and category. The report includes KPI performance, "
+    "alerts, investigation evidence, ownership and the Gemini narrative "
+    "if one has already been generated for the selected alert."
+)
+
+
+def build_investigation_pdf():
+    """Create a PDF report from the dashboard's currently filtered data."""
+    import io
+    from datetime import datetime
+    from xml.sax.saxutils import escape
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        PageBreak, Image as RLImage, KeepTogether
+    )
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        rightMargin=14 * mm, leftMargin=14 * mm,
+        topMargin=15 * mm, bottomMargin=16 * mm,
+        title="E-Commerce Anomaly Intelligence Investigation Report",
+        author="E-Commerce Anomaly Intelligence"
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name="PDFTitle", parent=styles["Title"], fontSize=18,
+        leading=22, alignment=TA_CENTER,
+        textColor=colors.HexColor("#17365D"), spaceAfter=4 * mm
+    ))
+    styles.add(ParagraphStyle(
+        name="PDFSection", parent=styles["Heading2"], fontSize=12,
+        leading=15, textColor=colors.HexColor("#17365D"),
+        spaceBefore=4 * mm, spaceAfter=2 * mm
+    ))
+    styles.add(ParagraphStyle(
+        name="PDFBody", parent=styles["BodyText"], fontSize=8.5,
+        leading=12, spaceAfter=1.5 * mm
+    ))
+    styles.add(ParagraphStyle(
+        name="PDFSmall", parent=styles["BodyText"], fontSize=7,
+        leading=9
+    ))
+
+    story = [
+        Paragraph("E-Commerce Anomaly Intelligence", styles["PDFTitle"]),
+        Paragraph(
+            "Business Performance &amp; Anomaly Investigation Report",
+            ParagraphStyle(
+                "PDFSubtitle", parent=styles["Normal"],
+                alignment=TA_CENTER, fontSize=10,
+                textColor=colors.HexColor("#526579")
+            )
+        ),
+        Spacer(1, 4 * mm),
+        Paragraph(
+            f"<b>Reporting period:</b> {escape(str(start_date))} to {escape(str(end_date))}"
+            f" &nbsp;&nbsp; <b>Geography:</b> {escape(str(geo))}"
+            f" &nbsp;&nbsp; <b>Category:</b> {escape(str(category))}",
+            styles["PDFBody"]
+        ),
+        Paragraph(
+            f"<b>Generated:</b> {datetime.now().strftime('%d %b %Y, %H:%M')}",
+            styles["PDFBody"]
+        ),
+    ]
+
+    def add_table(rows, widths=None, font_size=7):
+        table = Table(rows, colWidths=widths, repeatRows=1, hAlign="LEFT")
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17365D")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE", (0, 0), (-1, -1), font_size),
+            ("LEADING", (0, 0), (-1, -1), font_size + 2),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#CBD5E1")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+             [colors.white, colors.HexColor("#F3F6FA")]),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        return table
+
+    # 1. KPI summary
+    story.append(Paragraph("1. Business Performance Summary", styles["PDFSection"]))
+    kpi_rows = [["KPI", "Selected-period value"]]
+    kpi_values = [
+        ("Total Orders", f"{range_orders:,.0f}"),
+        ("Total Revenue", f"INR {range_revenue:,.2f}"),
+        ("Weighted Average Order Value", f"INR {range_aov:,.2f}"),
+        ("Average Cancellation Rate", f"{range_cancellation:.2f}%"
+         if pd.notna(range_cancellation) else "N/A"),
+    ]
+    kpi_rows.extend(kpi_values)
+    story.append(add_table(kpi_rows, [75 * mm, 95 * mm], 8))
+
+    # 2. KPI trend charts
+    story.append(Paragraph("2. KPI Trends and Expected Baselines", styles["PDFSection"]))
+    chart_map = [
+        ("Orders", "Total_Orders", "Total_Orders_Expected"),
+        ("Revenue (INR)", "Total_Revenue_INR", "Total_Revenue_INR_Expected"),
+        ("Weighted AOV (INR)", "Weighted_AOV_INR", "Weighted_AOV_INR_Expected"),
+        ("Cancellation Rate (%)", "Avg_Cancellation_Rate_Pct",
+         "Avg_Cancellation_Rate_Pct_Expected"),
+    ]
+    chart_images = []
+    chart_buffer = io.BytesIO()
+    fig, axes = plt.subplots(2, 2, figsize=(9, 5.6))
+    axes = axes.flatten()
+    plot_count = 0
+    trend_data = det.copy()
+    trend_data["Date"] = pd.to_datetime(trend_data["Date"], errors="coerce")
+    trend_data = trend_data.dropna(subset=["Date"]).sort_values("Date")
+
+    for ax, (label, actual_col, expected_col) in zip(axes, chart_map):
+        if actual_col not in trend_data.columns:
+            ax.set_visible(False)
+            continue
+        ax.plot(trend_data["Date"], trend_data[actual_col],
+                label="Actual", linewidth=1.5)
+        if expected_col in trend_data.columns:
+            ax.plot(trend_data["Date"], trend_data[expected_col],
+                    label="Expected", linestyle="--", linewidth=1.2)
+        ax.set_title(label, fontsize=9)
+        ax.grid(True, alpha=0.2)
+        ax.tick_params(axis="x", labelrotation=25, labelsize=6)
+        ax.tick_params(axis="y", labelsize=6)
+        ax.legend(fontsize=6)
+        plot_count += 1
+
+    plt.tight_layout()
+    if plot_count:
+        fig.savefig(chart_buffer, format="png", dpi=150, bbox_inches="tight")
+        chart_buffer.seek(0)
+        story.append(RLImage(chart_buffer, width=170 * mm, height=106 * mm))
+    plt.close(fig)
+
+    # 3. Alert register
+    story.append(Paragraph("3. Alert Summary", styles["PDFSection"]))
+    if not alert_data.empty:
+        alert_rows = [[
+            "Date", "Priority", "Severity", "Owner", "Supporting Owner"
+        ]]
+        for _, row in alert_data.sort_values("Date", ascending=False).head(40).iterrows():
+            dt = pd.to_datetime(row.get("Date"), errors="coerce")
+            date_label = dt.strftime("%d %b %Y") if pd.notna(dt) else "N/A"
+            alert_rows.append([
+                date_label,
+                str(row.get("Display_Priority", get_priority(row))),
+                str(row.get("Overall_Anomaly_Severity", "N/A")),
+                str(row.get("Owner", "Not assigned")),
+                str(row.get("Supporting_Owner", "Not assigned")),
+            ])
+        story.append(add_table(
+            alert_rows, [25 * mm, 27 * mm, 25 * mm, 40 * mm, 48 * mm], 6.5
+        ))
+        if len(alert_data) > 40:
+            story.append(Paragraph(
+                "Showing the latest 40 alerts matching the selected filters.",
+                styles["PDFSmall"]
+            ))
+    else:
+        story.append(Paragraph(
+            "No alerts match the selected date range and priority filters.",
+            styles["PDFBody"]
+        ))
+
+    # 4. Category investigation summary
+    story.append(Paragraph("4. Category Investigation", styles["PDFSection"]))
+    category_pdf = prod.copy()
+    if not category_pdf.empty and "Category" in category_pdf.columns:
+        category_pdf["Orders"] = pd.to_numeric(category_pdf.get("Orders"), errors="coerce")
+        category_pdf["Revenue_INR"] = pd.to_numeric(
+            category_pdf.get("Revenue_INR"), errors="coerce"
+        )
+        cat_summary = category_pdf.groupby("Category", as_index=False).agg(
+            Orders=("Orders", "sum"), Revenue_INR=("Revenue_INR", "sum")
+        ).sort_values("Revenue_INR", ascending=False).head(15)
+        cat_rows = [["Category", "Orders", "Revenue (INR)"]]
+        for _, row in cat_summary.iterrows():
+            cat_rows.append([
+                str(row["Category"]),
+                f"{row['Orders']:,.0f}" if pd.notna(row["Orders"]) else "N/A",
+                f"{row['Revenue_INR']:,.2f}" if pd.notna(row["Revenue_INR"]) else "N/A",
+            ])
+        story.append(add_table(cat_rows, [70 * mm, 40 * mm, 55 * mm], 7))
+    else:
+        story.append(Paragraph(
+            "Category-level data is not available for the selected filters.",
+            styles["PDFBody"]
+        ))
+
+    # 5. Product investigation summary
+    story.append(Paragraph("5. Product Investigation", styles["PDFSection"]))
+    if not prod.empty and "Product_Name" in prod.columns:
+        product_pdf = prod.copy()
+        product_pdf["Orders"] = pd.to_numeric(
+            product_pdf.get("Orders"), errors="coerce"
+        )
+        product_pdf["Revenue_INR"] = pd.to_numeric(
+            product_pdf.get("Revenue_INR"), errors="coerce"
+        )
+        product_summary_pdf = product_pdf.groupby(
+            "Product_Name", as_index=False
+        ).agg(Orders=("Orders", "sum"), Revenue_INR=("Revenue_INR", "sum"))
+        product_summary_pdf = product_summary_pdf.sort_values(
+            "Revenue_INR", ascending=False
+        ).head(15)
+        product_rows = [["Product", "Orders", "Revenue (INR)"]]
+        for _, row in product_summary_pdf.iterrows():
+            product_rows.append([
+                str(row["Product_Name"])[:65],
+                f"{row['Orders']:,.0f}" if pd.notna(row["Orders"]) else "N/A",
+                f"{row['Revenue_INR']:,.2f}" if pd.notna(row["Revenue_INR"]) else "N/A",
+            ])
+        story.append(add_table(product_rows, [85 * mm, 30 * mm, 50 * mm], 6.5))
+    else:
+        story.append(Paragraph(
+            "Product-level data is not available for the selected filters.",
+            styles["PDFBody"]
+        ))
+
+    # 6. Selected alert and Gemini narrative
+    story.append(Paragraph("6. Selected Alert Investigation", styles["PDFSection"]))
+    if not alert_data.empty and "selected_row" in globals():
+        selected_alert = selected_row
+        selected_dt = pd.to_datetime(selected_alert.get("Date"), errors="coerce")
+        selected_date_label = (
+            selected_dt.strftime("%Y-%m-%d") if pd.notna(selected_dt) else "N/A"
+        )
+        affected_text, root_hypothesis, root_confidence, root_evidence = build_narrative(
+            selected_alert
+        )
+        for label, value in [
+            ("Alert date", selected_date_label),
+            ("Severity", selected_alert.get("Overall_Anomaly_Severity", "Unknown")),
+            ("Priority", selected_alert.get("Display_Priority", get_priority(selected_alert))),
+            ("Affected KPIs", affected_text),
+            ("Rule-based hypothesis", root_hypothesis),
+            ("Confidence", root_confidence),
+            ("Owner", selected_alert.get("Owner", "Not assigned")),
+            ("Supporting Owner", selected_alert.get("Supporting_Owner", "Not assigned")),
+            ("Recommended Action", selected_alert.get(
+                "Recommended_Action", "Validate the alert evidence."
+            )),
+        ]:
+            story.append(Paragraph(
+                f"<b>{escape(str(label))}:</b> {escape(str(value))}",
+                styles["PDFBody"]
+            ))
+        if root_evidence:
+            story.append(Paragraph("<b>Observed KPI evidence:</b>", styles["PDFBody"]))
+            for item in root_evidence:
+                story.append(Paragraph("• " + escape(str(item)), styles["PDFBody"]))
+
+        gemini_text_saved = st.session_state.get("gemini_narrative_text")
+        gemini_date_saved = st.session_state.get("gemini_narrative_date")
+        if gemini_text_saved and gemini_date_saved == selected_date_label:
+            story.append(Paragraph("Gemini AI Investigation Narrative", styles["PDFSection"]))
+            # Keep the existing Gemini-generated narrative unchanged.
+            for paragraph in str(gemini_text_saved).splitlines():
+                clean_paragraph = paragraph.strip()
+                if clean_paragraph:
+                    story.append(Paragraph(
+                        escape(clean_paragraph).replace("&lt;b&gt;", ""),
+                        styles["PDFBody"]
+                    ))
+        else:
+            story.append(Paragraph(
+                "No Gemini narrative has been generated for the currently selected alert. "
+                "The rule-based investigation above is included instead.",
+                styles["PDFBody"]
+            ))
+    else:
+        story.append(Paragraph(
+            "No selected alert is available. The report includes the KPI and "
+            "filtered alert summaries above.",
+            styles["PDFBody"]
+        ))
+
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph("7. Interpretation and Limitations", styles["PDFSection"]))
+    story.append(Paragraph(
+        "Anomaly flags and root-cause explanations are investigation signals, not proof "
+        "of causation. Validate hypotheses against technical, payment, inventory and "
+        "operational records before taking action. This report uses the historical data "
+        "and filters currently loaded in the dashboard.",
+        styles["PDFBody"]
+    ))
+
+    def add_page_number(canvas, document):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#64748B"))
+        canvas.drawString(
+            14 * mm, 8 * mm,
+            "E-Commerce Anomaly Intelligence | Investigation Report"
+        )
+        canvas.drawRightString(
+            A4[0] - 14 * mm, 8 * mm, f"Page {document.page}"
+        )
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+pdf_button_col, pdf_note_col = st.columns([1, 3])
+with pdf_button_col:
+    generate_pdf_clicked = st.button(
+        "Generate PDF Report",
+        type="primary",
+        key="generate_investigation_pdf"
+    )
+
+if generate_pdf_clicked:
+    try:
+        with st.spinner("Generating your investigation report..."):
+            generated_pdf = build_investigation_pdf()
+        st.session_state["investigation_pdf_bytes"] = generated_pdf
+        st.session_state["investigation_pdf_name"] = (
+            f"Ecommerce_Investigation_Report_{start_date}_{end_date}.pdf"
+        )
+        st.success("PDF report generated successfully.")
+    except ImportError as exc:
+        st.error(
+            "PDF libraries are missing. Confirm that reportlab and matplotlib "
+            f"are listed in requirements.txt. Details: {exc}"
+        )
+    except Exception as exc:
+        st.error(
+            f"Could not generate the PDF: {type(exc).__name__}: {str(exc)[:400]}"
+        )
+
+if st.session_state.get("investigation_pdf_bytes"):
+    st.download_button(
+        "Download PDF Report",
+        data=st.session_state["investigation_pdf_bytes"],
+        file_name=st.session_state.get(
+            "investigation_pdf_name", "Ecommerce_Investigation_Report.pdf"
+        ),
+        mime="application/pdf",
+        key="download_investigation_pdf"
+    )
+
+
+
 # ==================================================
-# 13. FOOTER
+# 14. FOOTER
 # ==================================================
 st.divider()
 st.caption(
