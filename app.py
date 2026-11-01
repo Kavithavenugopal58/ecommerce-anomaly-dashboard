@@ -2306,62 +2306,38 @@ def generate_gemini_narrative(
     supporting_owner,
     recommended_action
 ):
-    """Generate a Gemini investigation narrative grounded in Google Search."""
+    """Generate an AI investigation narrative using Gemini."""
 
     from google import genai
     import streamlit as st
-    from datetime import timedelta
 
     api_key = st.secrets.get("GEMINI_API_KEY", "")
     model_name = st.secrets.get("GEMINI_MODEL", "gemini-3.8-flash")
 
     if not api_key:
-        return None, [], "GEMINI_API_KEY is missing from Streamlit Secrets."
+        return None, "GEMINI_API_KEY is missing from Streamlit Secrets."
 
     date_value = selected_row.get("Date", "Unknown")
     if hasattr(date_value, "strftime"):
-        alert_date = date_value.date() if hasattr(date_value, "date") else date_value
-        date_text = alert_date.strftime("%Y-%m-%d")
-        search_start = (alert_date - timedelta(days=3)).strftime("%Y-%m-%d")
-        search_end = (alert_date + timedelta(days=3)).strftime("%Y-%m-%d")
-    else:
-        date_text = str(date_value)
-        search_start = date_text
-        search_end = date_text
+        date_value = date_value.strftime("%Y-%m-%d")
 
     evidence_text = "\n".join(
         "- " + str(item) for item in evidence
     ) if evidence else "No detailed evidence supplied."
 
     prompt = f"""
-You are an e-commerce anomaly investigation analyst for an India-focused
-online retail business. Analyze the internal alert and research relevant
-external e-commerce events using Google Search.
+You are an e-commerce anomaly investigation analyst.
 
-ALERT DATE: {date_text}
-EXTERNAL EVENT SEARCH WINDOW: {search_start} to {search_end} (inclusive).
-Search for events that OCCURRED during this window, not merely events that
-are currently being advertised. Article publication date may differ from
-the event date; clearly distinguish them.
+Analyze this alert using only the supplied evidence.
+Do not invent facts. Root causes must remain hypotheses,
+not confirmed findings.
 
-Search broadly across relevant Indian e-commerce context, including Amazon
-India, Flipkart and other major platforms, major sale/promotional campaigns,
-shopping festivals, competitor events, logistics/last-mile disruptions,
-fulfilment or payment outages, regulatory changes, and other credible
-market events that could plausibly affect online retail KPIs.
-
-Do not assume an event happened. Include only findings supported by the
-search results. Prefer official company announcements and reputable news
-sources. If no relevant event is found for this historical date window,
-state: "No relevant external event was verified in the searched sources."
-Do not substitute present-day 2026 promotions for events in the alert window.
-
-INTERNAL ALERT EVIDENCE (treat this as the source of truth for dashboard metrics):
-Date: {date_text}
+Date: {date_value}
 Severity: {selected_row.get('Overall_Anomaly_Severity', 'Unknown')}
 Affected KPIs: {affected}
 Rule-based hypothesis: {hypothesis}
 Rule-based confidence: {confidence}
+
 Evidence:
 {evidence_text}
 
@@ -2370,61 +2346,38 @@ Supporting Owner: {supporting_owner}
 Existing recommended action: {recommended_action}
 
 Write a concise business-friendly report with these headings:
+
 1. Alert Summary
 2. Business Impact
-3. Internal Evidence and Possible Root Causes
-4. External Event Context (include event date, source publication date if
-   available, relevance, and whether the connection is weak/moderate/strong)
-5. Evidence Limitations
-6. Three Prioritized Investigation Steps
-7. Ownership and Recommended Action
+3. Possible Root Causes
+4. Evidence and Limitations
+5. Three Prioritized Investigation Steps
+6. Ownership and Recommended Action
 
-Keep internal statistical evidence separate from external web findings.
-An event occurring at the same time is NOT proof that it caused the anomaly.
-Do not claim causation. If relevance is uncertain, say so. Preserve the
-assigned Owner and Supporting Owner. Do not invent citations or sources;
-Google Search citations will be displayed separately by the application.
+Clearly separate observed evidence from possible explanations.
+Do not claim a cause is confirmed unless the evidence proves it.
+Preserve the assigned Owner and Supporting Owner.
 """
 
     try:
         client = genai.Client(api_key=api_key)
 
-        # Google Search grounding lets Gemini search for dated events and
-        # return URL citations with its answer.
         response = client.interactions.create(
             model=model_name,
-            input=prompt,
-            tools=[{"type": "google_search"}]
+            input=prompt
         )
 
-        narrative = (getattr(response, "output_text", None) or "").strip()
-
-        # Extract source citations from the Interactions API model-output steps.
-        citations = []
-        seen_urls = set()
-        for step in (getattr(response, "steps", None) or []):
-            if getattr(step, "type", None) != "model_output":
-                continue
-            for block in (getattr(step, "content", None) or []):
-                for annotation in (getattr(block, "annotations", None) or []):
-                    if getattr(annotation, "type", None) != "url_citation":
-                        continue
-                    url = (
-                        getattr(annotation, "uri", None)
-                        or getattr(annotation, "url", None)
-                    )
-                    title = getattr(annotation, "title", None) or url
-                    if url and url not in seen_urls:
-                        citations.append({"title": str(title), "url": str(url)})
-                        seen_urls.add(url)
+        narrative = (
+            getattr(response, "output_text", None) or ""
+        ).strip()
 
         if narrative:
-            return narrative, citations, None
+            return narrative, None
 
-        return None, [], "Gemini returned an empty response."
+        return None, "Gemini returned an empty response."
 
     except Exception as exc:
-        return None, [], f"{type(exc).__name__}: {str(exc)[:400]}"
+        return None, f"{type(exc).__name__}: {str(exc)[:400]}"
 
 # ==================================================
 # 12. ALERT INVESTIGATION: RULE-BASED + GEMINI
@@ -2495,8 +2448,8 @@ if not alert_data.empty:
         type="primary",
         key="generate_gemini_narrative"
     ):
-        with st.spinner("Gemini is analyzing the alert and searching for relevant e-commerce events..."):
-            gemini_text, gemini_citations, gemini_error = generate_gemini_narrative(
+        with st.spinner("Gemini is analyzing the selected alert evidence..."):
+            gemini_text, gemini_error = generate_gemini_narrative(
                 selected_row=selected_row,
                 affected=affected,
                 hypothesis=hypothesis,
@@ -2510,12 +2463,10 @@ if not alert_data.empty:
         if gemini_text:
             st.session_state["gemini_narrative_date"] = selected_date
             st.session_state["gemini_narrative_text"] = gemini_text
-            st.session_state["gemini_narrative_citations"] = gemini_citations
             st.session_state["gemini_narrative_error"] = None
         else:
             st.session_state["gemini_narrative_date"] = selected_date
             st.session_state["gemini_narrative_text"] = None
-            st.session_state["gemini_narrative_citations"] = []
             st.session_state["gemini_narrative_error"] = gemini_error
 
     if st.session_state.get("gemini_narrative_date") == selected_date:
@@ -2525,16 +2476,6 @@ if not alert_data.empty:
         if saved_narrative:
             st.success("Generated successfully by Gemini")
             st.markdown(saved_narrative)
-            saved_citations = st.session_state.get("gemini_narrative_citations", [])
-            if saved_citations:
-                with st.expander("External research sources (Google Search)", expanded=False):
-                    for source in saved_citations:
-                        st.markdown(f"- [{source['title']}]({source['url']})")
-            else:
-                st.caption(
-                    "No URL citations were returned by Google Search for this narrative. "
-                    "Treat any external-event summary as unverified until checked."
-                )
             st.caption(
                 f"Model: {st.secrets.get('GEMINI_MODEL', 'gemini-3.8-flash')}. "
                 "AI-generated analysis is advisory; validate hypotheses "
@@ -2553,520 +2494,6 @@ else:
         "No alert is available for the selected date range and priority. "
         "Adjust the filters to view alerts."
     )
-
-
-
-# ==========================================================
-# 12A. PDF INVESTIGATION REPORT GENERATOR
-# ==========================================================
-st.divider()
-st.subheader("Investigation Report")
-st.write(
-    "Generate a downloadable PDF containing the selected-period KPI trends, "
-    "category and product investigation, alert priorities, and available "
-    "rule-based or Gemini narrative."
-)
-
-def build_investigation_pdf():
-    """Build a multi-page PDF from the dashboard's current filters and data."""
-    import io
-    from datetime import datetime
-    from xml.sax.saxutils import escape
-
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import mm
-    from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-        PageBreak, Image as RLImage, KeepTogether
-    )
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=15 * mm,
-        leftMargin=15 * mm,
-        topMargin=16 * mm,
-        bottomMargin=16 * mm,
-        title="E-Commerce Anomaly Intelligence Investigation Report",
-        author="E-Commerce Anomaly Intelligence"
-    )
-
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(
-        name="ReportTitle", parent=styles["Title"],
-        fontName="Helvetica-Bold", fontSize=19, leading=23,
-        textColor=colors.HexColor("#17365D"), alignment=TA_CENTER,
-        spaceAfter=5 * mm
-    ))
-    styles.add(ParagraphStyle(
-        name="SectionHeading", parent=styles["Heading2"],
-        fontSize=13, leading=16, textColor=colors.HexColor("#17365D"),
-        spaceBefore=4 * mm, spaceAfter=2 * mm
-    ))
-    styles.add(ParagraphStyle(
-        name="SmallText", parent=styles["BodyText"],
-        fontSize=8, leading=10
-    ))
-    styles.add(ParagraphStyle(
-        name="NarrativeText", parent=styles["BodyText"],
-        fontSize=9, leading=13, spaceAfter=2 * mm
-    ))
-
-    story = []
-    report_date = datetime.now().strftime("%d %b %Y, %H:%M")
-    story.append(Paragraph("E-Commerce Anomaly Intelligence", styles["ReportTitle"]))
-    story.append(Paragraph(
-        "Business Performance &amp; Anomaly Investigation Report",
-        ParagraphStyle(
-            "SubTitle", parent=styles["Normal"], alignment=TA_CENTER,
-            fontSize=11, textColor=colors.HexColor("#526579")
-        )
-    ))
-    story.append(Spacer(1, 3 * mm))
-    story.append(Paragraph(
-        f"<b>Reporting period:</b> {escape(str(start_date))} to {escape(str(end_date))}"
-        f" &nbsp;&nbsp; <b>Geography:</b> {escape(str(geo))}"
-        f" &nbsp;&nbsp; <b>Category filter:</b> {escape(str(category))}",
-        styles["SmallText"]
-    ))
-    story.append(Paragraph(
-        f"<b>Generated:</b> {report_date} &nbsp;&nbsp; "
-        "<b>Data basis:</b> Historical dashboard dataset",
-        styles["SmallText"]
-    ))
-
-    def make_table(rows, widths=None, header=True, font_size=7):
-        wrapped = []
-        for row_index, row in enumerate(rows):
-            wrapped_row = []
-            for value in row:
-                value_text = "—" if value is None or pd.isna(value) else str(value)
-                wrapped_row.append(Paragraph(
-                    escape(value_text).replace("\n", "<br/>"),
-                    styles["SmallText"]
-                ))
-            wrapped.append(wrapped_row)
-        if widths is None and rows and len(rows[0]) > 0:
-            widths = [180 * mm / len(rows[0])] * len(rows[0])
-        table = Table(wrapped, colWidths=widths, repeatRows=1 if header else 0,
-                      hAlign="LEFT")
-        commands = [
-            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D5DCE5")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ]
-        if header and rows:
-            commands += [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF0F6")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#17365D")),
-            ]
-        table.setStyle(TableStyle(commands))
-        return table
-
-    # Executive summary and KPI cards
-    story.append(Paragraph("1. Executive Summary", styles["SectionHeading"]))
-    summary_rows = [
-        ["Measure", "Selected-period result"],
-        ["Total orders", f"{range_orders:,.0f}"],
-        ["Total revenue", f"₹{range_revenue:,.2f}"],
-        ["Weighted average order value", f"₹{range_aov:,.2f}"],
-        ["Average daily cancellation rate", f"{range_cancellation:.2f}%"
-         if pd.notna(range_cancellation) else "N/A"],
-        ["Alerts in selected priority/date filters", str(len(alert_data))],
-    ]
-    story.append(make_table(summary_rows, widths=[75 * mm, 90 * mm]))
-    story.append(Spacer(1, 2 * mm))
-
-    # KPI trend table and charts
-    story.append(Paragraph("2. KPI Trend Analysis", styles["SectionHeading"]))
-    trend_cols = [
-        ("Orders", "Total_Orders", "Total_Orders_Expected"),
-        ("Revenue (INR)", "Total_Revenue_INR", "Total_Revenue_INR_Expected"),
-        ("Weighted AOV (INR)", "Weighted_AOV_INR", "Weighted_AOV_INR_Expected"),
-        ("Cancellation Rate (%)", "Avg_Cancellation_Rate_Pct",
-         "Avg_Cancellation_Rate_Pct_Expected"),
-    ]
-    trend_table = [["KPI", "Actual (period)", "Expected (daily baseline avg)", "Days"]]
-    for label, actual_col, expected_col in trend_cols:
-        if actual_col in det.columns:
-            actual_series = pd.to_numeric(det[actual_col], errors="coerce")
-            if label == "Orders":
-                actual_value = f"{actual_series.sum():,.0f}"
-            elif label == "Revenue (INR)":
-                actual_value = f"₹{actual_series.sum():,.2f}"
-            elif label == "Weighted AOV (INR)":
-                actual_value = f"₹{(range_aov):,.2f}"
-            else:
-                actual_value = f"{actual_series.mean():.2f}%"
-            expected_value = (
-                f"{pd.to_numeric(det[expected_col], errors='coerce').mean():,.2f}"
-                if expected_col in det.columns else "Unavailable"
-            )
-            trend_table.append([label, actual_value, expected_value, str(actual_series.notna().sum())])
-    story.append(make_table(trend_table, widths=[43 * mm, 43 * mm, 57 * mm, 22 * mm]))
-
-    # Four KPI trend charts; each uses actual and expected values from detected.csv.
-    for label, actual_col, expected_col in trend_cols:
-        if actual_col not in det.columns:
-            continue
-        chart_df = det[["Date", actual_col]].copy()
-        chart_df[actual_col] = pd.to_numeric(chart_df[actual_col], errors="coerce")
-        if expected_col in det.columns:
-            chart_df["Expected"] = pd.to_numeric(det[expected_col], errors="coerce")
-        chart_df = chart_df.dropna(subset=[actual_col]).sort_values("Date")
-        if chart_df.empty:
-            continue
-        fig, ax = plt.subplots(figsize=(7.0, 2.2))
-        ax.plot(chart_df["Date"], chart_df[actual_col], label="Actual", linewidth=1.5)
-        if "Expected" in chart_df.columns:
-            ax.plot(chart_df["Date"], chart_df["Expected"], label="Expected baseline",
-                    linestyle="--", linewidth=1.2)
-        ax.set_title(label, fontsize=10)
-        ax.grid(True, alpha=0.25)
-        ax.legend(fontsize=7, loc="best")
-        fig.autofmt_xdate()
-        fig.tight_layout()
-        chart_buffer = io.BytesIO()
-        fig.savefig(chart_buffer, format="png", dpi=130, bbox_inches="tight")
-        plt.close(fig)
-        chart_buffer.seek(0)
-        story.append(RLImage(chart_buffer, width=165 * mm, height=52 * mm))
-        story.append(Spacer(1, 1 * mm))
-
-    # Alert priority distribution and alert table
-    story.append(Paragraph("3. Alert Priorities", styles["SectionHeading"]))
-    if not alert_data.empty:
-        priority_counts = (
-            alert_data["Display_Priority"].value_counts().to_dict()
-            if "Display_Priority" in alert_data.columns else {}
-        )
-        priority_rows = [["Priority", "Alert count"]]
-        for priority in ["P1 - Immediate", "P2 - High", "P3 - Watch", "P4 - Normal"]:
-            priority_rows.append([priority, str(priority_counts.get(priority, 0))])
-        story.append(make_table(priority_rows, widths=[85 * mm, 45 * mm]))
-
-        visible = [c for c in [
-            "Date", "Display_Priority", "Overall_Anomaly_Severity",
-            "Affected_KPI_Count", "Owner", "Supporting_Owner",
-            "Recommended_Action"
-        ] if c in alert_data.columns]
-        if visible:
-            alert_rows = [[
-                "Date", "Priority", "Severity", "KPIs", "Owner",
-                "Supporting owner", "Recommended action"
-            ]]
-            for _, row in alert_data.sort_values("Date", ascending=False).head(25).iterrows():
-                alert_rows.append([
-                    pd.to_datetime(row.get("Date")).strftime("%d %b %Y"),
-                    row.get("Display_Priority", ""),
-                    row.get("Overall_Anomaly_Severity", ""),
-                    row.get("Affected_KPI_Count", ""),
-                    row.get("Owner", ""),
-                    row.get("Supporting_Owner", ""),
-                    row.get("Recommended_Action", ""),
-                ])
-            story.append(Spacer(1, 2 * mm))
-            story.append(make_table(alert_rows))
-    else:
-        story.append(Paragraph("No alerts match the selected dashboard filters.", styles["NarrativeText"]))
-
-    # Category investigation: contribution and actual category totals.
-    story.append(PageBreak())
-    story.append(Paragraph("4. Category Investigation", styles["SectionHeading"]))
-    category_data = prod.copy()
-    if not category_data.empty and "Category" in category_data.columns:
-        agg_map = {}
-        if "Orders" in category_data.columns:
-            agg_map["Orders"] = ("Orders", "sum")
-        if "Revenue_INR" in category_data.columns:
-            agg_map["Revenue"] = ("Revenue_INR", "sum")
-        if agg_map:
-            cat_table_df = category_data.groupby("Category", as_index=False).agg(**agg_map)
-            if "Orders" in cat_table_df.columns:
-                total = pd.to_numeric(cat_table_df["Orders"], errors="coerce").sum()
-                cat_table_df["Orders share (%)"] = (
-                    pd.to_numeric(cat_table_df["Orders"], errors="coerce") / total * 100
-                    if total else 0
-                )
-            if "Revenue" in cat_table_df.columns:
-                total_rev = pd.to_numeric(cat_table_df["Revenue"], errors="coerce").sum()
-                cat_table_df["Revenue share (%)"] = (
-                    pd.to_numeric(cat_table_df["Revenue"], errors="coerce") / total_rev * 100
-                    if total_rev else 0
-                )
-            cat_table_df = cat_table_df.sort_values(
-                "Revenue" if "Revenue" in cat_table_df.columns else "Orders",
-                ascending=False
-            )
-            cat_rows = [["Category"] + [c for c in cat_table_df.columns if c != "Category"]]
-            for _, row in cat_table_df.iterrows():
-                vals = [row["Category"]]
-                for col in cat_table_df.columns:
-                    if col == "Category":
-                        continue
-                    if "share" in col.lower():
-                        vals.append(f"{row[col]:.1f}%")
-                    elif col == "Revenue":
-                        vals.append(f"₹{row[col]:,.2f}")
-                    else:
-                        vals.append(f"{row[col]:,.0f}")
-                cat_rows.append(vals)
-            story.append(make_table(cat_rows))
-            # Reuse the dashboard's category actual-vs-expected investigation
-            # when that view has been calculated for the current selection.
-            current_category_results = globals().get("results")
-            if isinstance(current_category_results, pd.DataFrame) and not current_category_results.empty:
-                comparison_rows = [["Category", "Actual", "Expected", "Unfavourable gap", "Status"]]
-                for _, crow in current_category_results.iterrows():
-                    comparison_rows.append([
-                        str(crow.get("Category", "")),
-                        f"{crow.get('Actual', float('nan')):,.2f}" if pd.notna(crow.get("Actual")) else "N/A",
-                        f"{crow.get('Expected', float('nan')):,.2f}" if pd.notna(crow.get("Expected")) else "N/A",
-                        f"{crow.get('Gap', float('nan')):,.2f}" if pd.notna(crow.get("Gap")) else "N/A",
-                        str(crow.get("Status", "")),
-                    ])
-                story.append(Spacer(1, 2 * mm))
-                story.append(Paragraph(
-                    "Actual vs expected by category (dashboard calculation)",
-                    styles["NarrativeText"]
-                ))
-                story.append(make_table(comparison_rows))
-            # Revenue by category chart
-            if "Revenue" in cat_table_df.columns:
-                fig, ax = plt.subplots(figsize=(7.0, 2.8))
-                plot_df = cat_table_df.sort_values("Revenue", ascending=True)
-                ax.barh(plot_df["Category"].astype(str), plot_df["Revenue"])
-                ax.set_title("Revenue by category", fontsize=10)
-                ax.set_xlabel("Revenue (INR)")
-                ax.grid(axis="x", alpha=0.25)
-                fig.tight_layout()
-                chart_buffer = io.BytesIO()
-                fig.savefig(chart_buffer, format="png", dpi=130, bbox_inches="tight")
-                plt.close(fig)
-                chart_buffer.seek(0)
-                story.append(Spacer(1, 2 * mm))
-                story.append(RLImage(chart_buffer, width=165 * mm, height=65 * mm))
-        else:
-            story.append(Paragraph("Category KPI fields are unavailable in product_data.csv.", styles["NarrativeText"]))
-    else:
-        story.append(Paragraph("No category-level records match the selected filters.", styles["NarrativeText"]))
-
-    # Product investigation: product contribution and simple adverse-signal evidence.
-    story.append(Paragraph("5. Product-Level Investigation", styles["SectionHeading"]))
-    if not prod.empty and "Product_Name" in prod.columns:
-        product_agg = {}
-        if "Orders" in prod.columns:
-            product_agg["Orders"] = ("Orders", "sum")
-        if "Revenue_INR" in prod.columns:
-            product_agg["Revenue"] = ("Revenue_INR", "sum")
-        if product_agg:
-            product_table_df = prod.groupby(
-                ["Category", "Product_Name"], as_index=False
-            ).agg(**product_agg)
-            sort_col = "Revenue" if "Revenue" in product_table_df.columns else "Orders"
-            product_table_df = product_table_df.sort_values(sort_col, ascending=False).head(15)
-            prod_rows = [["Category", "Product"] + list(product_agg.keys())]
-            for _, row in product_table_df.iterrows():
-                prod_rows.append([
-                    str(row["Category"]), str(row["Product_Name"]),
-                    *[
-                        (f"₹{row[c]:,.2f}" if c == "Revenue" else f"{row[c]:,.0f}")
-                        for c in product_agg.keys()
-                    ]
-                ])
-            story.append(Paragraph(
-                "Top 15 products by revenue (or orders where revenue is unavailable), "
-                "within the selected date, geography and category filters.",
-                styles["NarrativeText"]
-            ))
-            story.append(make_table(prod_rows))
-        else:
-            story.append(Paragraph("Product KPI fields are unavailable.", styles["NarrativeText"]))
-
-        # Include the actual product anomaly evidence calculated by the dashboard
-        # when Product Anomaly Investigation is the selected view.
-        if globals().get("product_view") == "Product Anomaly Investigation":
-            current_anomalies = globals().get("anomaly_rows")
-            if isinstance(current_anomalies, pd.DataFrame) and not current_anomalies.empty:
-                story.append(Spacer(1, 2 * mm))
-                story.append(Paragraph(
-                    "Products with potential adverse anomalies (same selected KPI and filters)",
-                    styles["NarrativeText"]
-                ))
-                anomaly_cols = [
-                    c for c in [
-                        "Date", "Category", "Product_Name", metric_col,
-                        "Expected", "Deviation_Pct", "MAD"
-                    ] if c in current_anomalies.columns
-                ]
-                anomaly_rows_pdf = [[
-                    "Anomaly date" if c == "Date" else
-                    "Product" if c == "Product_Name" else
-                    "Actual" if c == metric_col else
-                    "Expected baseline" if c == "Expected" else
-                    "Adverse deviation (%)" if c == "Deviation_Pct" else
-                    "Historical MAD" if c == "MAD" else c
-                    for c in anomaly_cols
-                ]]
-                for _, arow in current_anomalies[anomaly_cols].head(30).iterrows():
-                    vals = []
-                    for c in anomaly_cols:
-                        value = arow[c]
-                        if c == "Date":
-                            value = pd.to_datetime(value).strftime("%d %b %Y")
-                        elif isinstance(value, (int, float)) and pd.notna(value):
-                            value = f"{value:,.2f}"
-                        vals.append(value)
-                    anomaly_rows_pdf.append(vals)
-                story.append(make_table(anomaly_rows_pdf))
-            else:
-                story.append(Paragraph(
-                    "No product-level adverse anomalies were detected for the selected KPI, "
-                    "category, geography and date range, or no anomaly evidence table was available.",
-                    styles["NarrativeText"]
-                ))
-    else:
-        story.append(Paragraph("No product-level records match the selected filters.", styles["NarrativeText"]))
-
-    # Selected alert narrative and Google Search sources, if generated.
-    story.append(PageBreak())
-    story.append(Paragraph("6. Investigation Narrative", styles["SectionHeading"]))
-    narrative_date = st.session_state.get("gemini_narrative_date")
-    narrative_text = st.session_state.get("gemini_narrative_text")
-    narrative_citations = st.session_state.get("gemini_narrative_citations", [])
-
-    if narrative_text and narrative_date and str(narrative_date) == str(
-        globals().get("selected_date", "")
-    ):
-        story.append(Paragraph(
-            f"<b>Gemini narrative for alert date:</b> {escape(str(narrative_date))}",
-            styles["NarrativeText"]
-        ))
-        for paragraph_text in str(narrative_text).split("\n"):
-            clean = escape(paragraph_text.strip())
-            if clean:
-                story.append(Paragraph(clean, styles["NarrativeText"]))
-        if narrative_citations:
-            story.append(Paragraph("External research sources", styles["SectionHeading"]))
-            for source in narrative_citations:
-                title = escape(str(source.get("title", "Source")))
-                url = escape(str(source.get("url", "")))
-                if url:
-                    story.append(Paragraph(
-                        f'<link href="{url}" color="#1769AA">{title}</link>',
-                        styles["SmallText"]
-                    ))
-    elif "selected_row" in globals() or "selected_row" in locals():
-        story.append(Paragraph(
-            "A Gemini narrative has not been generated for the selected alert. "
-            "The rule-based investigation summary is included below where available.",
-            styles["NarrativeText"]
-        ))
-        try:
-            rule_row = selected_row
-            affected_text, hypothesis_text, confidence_text, evidence_items = build_narrative(rule_row)
-            story.append(Paragraph(f"<b>Affected KPIs:</b> {escape(str(affected_text))}", styles["NarrativeText"]))
-            story.append(Paragraph(f"<b>Hypothesis:</b> {escape(str(hypothesis_text))}", styles["NarrativeText"]))
-            story.append(Paragraph(f"<b>Confidence:</b> {escape(str(confidence_text))}", styles["NarrativeText"]))
-            for item in evidence_items:
-                story.append(Paragraph("• " + escape(str(item)), styles["NarrativeText"]))
-        except Exception:
-            story.append(Paragraph(
-                "No selected-alert narrative is available. Refer to the alert table for findings and ownership.",
-                styles["NarrativeText"]
-            ))
-    else:
-        story.append(Paragraph(
-            "No Gemini narrative has been generated. The report includes dashboard metrics and alert evidence.",
-            styles["NarrativeText"]
-        ))
-
-    story.append(Paragraph("7. Ownership & Recommended Actions", styles["SectionHeading"]))
-    if not alert_data.empty:
-        ownership_rows = [["Alert date", "Priority", "Owner", "Supporting owner", "Recommended action"]]
-        for _, row in alert_data.sort_values("Date", ascending=False).head(20).iterrows():
-            ownership_rows.append([
-                pd.to_datetime(row.get("Date")).strftime("%d %b %Y"),
-                row.get("Display_Priority", ""),
-                row.get("Owner", "Not assigned"),
-                row.get("Supporting_Owner", "Not assigned"),
-                row.get("Recommended_Action", "Validate anomaly evidence"),
-            ])
-        story.append(make_table(ownership_rows))
-    else:
-        story.append(Paragraph("No alert ownership records match the selected filters.", styles["NarrativeText"]))
-
-    story.append(Spacer(1, 4 * mm))
-    story.append(Paragraph("8. Interpretation & Limitations", styles["SectionHeading"]))
-    story.append(Paragraph(
-        "Anomaly flags and root-cause hypotheses are investigation signals, not proof of causation. "
-        "Category and product summaries are calculated from the available product-level dataset. "
-        "External event context is included only when a Gemini narrative and source citations have "
-        "already been generated. Validate findings against operational records before taking action.",
-        styles["NarrativeText"]
-    ))
-
-    def add_page_number(canvas, document):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#64748B"))
-        canvas.drawString(15 * mm, 9 * mm, "E-Commerce Anomaly Intelligence | Confidential project report")
-        canvas.drawRightString(A4[0] - 15 * mm, 9 * mm, f"Page {document.page}")
-        canvas.restoreState()
-
-    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
-    buffer.seek(0)
-    return buffer.getvalue()
-
-
-pdf_col1, pdf_col2 = st.columns([1, 3])
-with pdf_col1:
-    generate_pdf_clicked = st.button(
-        "Generate Investigation PDF",
-        type="primary",
-        key="generate_investigation_pdf"
-    )
-
-if generate_pdf_clicked:
-    try:
-        with st.spinner("Preparing your PDF investigation report..."):
-            pdf_bytes = build_investigation_pdf()
-        st.session_state["investigation_pdf_bytes"] = pdf_bytes
-        st.session_state["investigation_pdf_name"] = (
-            f"Ecommerce_Investigation_Report_{start_date}_{end_date}.pdf"
-        )
-        st.success("Your investigation report is ready.")
-    except ImportError as exc:
-        st.error(
-            "PDF report dependencies are missing. Add 'reportlab' and 'matplotlib' "
-            "to requirements.txt in your GitHub repository, then wait for Streamlit "
-            f"to redeploy. Details: {exc}"
-        )
-    except Exception as exc:
-        st.error(f"Could not generate the PDF report: {type(exc).__name__}: {str(exc)[:500]}")
-
-if st.session_state.get("investigation_pdf_bytes"):
-    st.download_button(
-        "Download PDF Report",
-        data=st.session_state["investigation_pdf_bytes"],
-        file_name=st.session_state.get(
-            "investigation_pdf_name", "Ecommerce_Investigation_Report.pdf"
-        ),
-        mime="application/pdf",
-        key="download_investigation_pdf"
-    )
-
 
 # ==================================================
 # 13. FOOTER
